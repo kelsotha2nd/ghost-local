@@ -20,6 +20,19 @@ case "${1:-}" in
     context)
         exec "$ROOT/lib/context"
         ;;
+    history)
+        exec "$ROOT/lib/history"
+        ;;
+    clear)
+        exec "$ROOT/lib/clear"
+        ;;
+    remember)
+        shift
+        exec "$ROOT/lib/remember" "$@"
+        ;;
+    memories)
+        exec "$ROOT/lib/memories"
+        ;;
     help|-h|--help)
         cat <<'EOF'
 GHOST // COMMANDS
@@ -27,6 +40,10 @@ GHOST // COMMANDS
   ghost                 show current machine state
   ghost ask <question>  ask GHOST using live machine context
   ghost context         inspect the context GHOST can see
+  ghost history         show recent conversation
+  ghost clear           clear conversation history
+  ghost remember <fact> store a deliberate long-term memory
+  ghost memories        show deliberate memories
   ghost help            show this message
 EOF
         exit 0

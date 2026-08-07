@@ -13,6 +13,7 @@ It is not an operating system or a general-purpose AI framework.
 - Local condition reporting for storage, battery, and system load
 - Machine-specific memory
 - Grounded model conversations through `ghost ask`
+- Private conversation continuity and deliberate long-term memories
 - Global command through a user-local symlink
 
 ## Layout
@@ -60,3 +61,15 @@ inspect the exact personality, memory, and live machine state supplied to the
 model. Conversation currently requires `curl` and `jq`. On NixOS, GHOST first
 reads declarative model settings from `/etc/ghost/model.env`; the repo-local
 configuration remains an optional override.
+
+Conversation state is stored privately under `~/.local/state/ghost`, never in
+Git. GHOST supplies the most recent 12 messages to each request by default:
+
+```bash
+ghost history
+ghost clear
+ghost remember "Athena is archived, not an active project"
+ghost memories
+```
+
+Clearing conversation history does not remove deliberate memories.

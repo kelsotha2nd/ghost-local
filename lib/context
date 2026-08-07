@@ -2,12 +2,23 @@
 
 SOURCE="${BASH_SOURCE[0]}"
 ROOT="$(cd -P "$(dirname "$SOURCE")/.." >/dev/null 2>&1 && pwd)"
+# shellcheck source=state
+source "$ROOT/lib/state"
+ghost_state_init
 
 echo "=== IDENTITY AND BEHAVIOR ==="
 if [ -r "$ROOT/config/personality.md" ]; then
     cat "$ROOT/config/personality.md"
 else
     echo "Personality configuration unavailable."
+fi
+
+echo
+echo "=== DELIBERATE MEMORIES ==="
+if [ -s "$GHOST_MEMORY_FILE" ] && command -v jq >/dev/null 2>&1; then
+    tail -n 50 "$GHOST_MEMORY_FILE" | jq -r '"- " + .content'
+else
+    echo "No deliberate memories stored."
 fi
 
 echo

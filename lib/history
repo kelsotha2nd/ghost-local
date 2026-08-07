@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+
+SOURCE="${BASH_SOURCE[0]}"
+ROOT="$(cd -P "$(dirname "$SOURCE")/.." >/dev/null 2>&1 && pwd)"
+# shellcheck source=state
+source "$ROOT/lib/state"
+ghost_state_init
+
+limit="${GHOST_HISTORY_DISPLAY:-20}"
+if [[ ! "$limit" =~ ^[1-9][0-9]*$ ]]; then
+    echo "GHOST // GHOST_HISTORY_DISPLAY must be a positive integer" >&2
+    exit 2
+fi
+
+if [ ! -s "$GHOST_HISTORY_FILE" ]; then
+    echo "GHOST // no conversation history"
+    exit 0
+fi
+
+echo "GHOST // RECENT CONVERSATION"
+tail -n "$limit" "$GHOST_HISTORY_FILE" |
+    jq -r '"\n[\(.created_at)] \(.role | ascii_upcase):\n\(.content)"'

@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+
+SOURCE="${BASH_SOURCE[0]}"
+ROOT="$(cd -P "$(dirname "$SOURCE")/.." >/dev/null 2>&1 && pwd)"
+# shellcheck source=state
+source "$ROOT/lib/state"
+
+memory="$*"
+if [ -z "$memory" ]; then
+    echo "usage: ghost remember <fact>" >&2
+    exit 2
+fi
+
+for dependency in jq flock; do
+    if ! command -v "$dependency" >/dev/null 2>&1; then
+        echo "GHOST // missing dependency: $dependency" >&2
+        exit 3
+    fi
+done
+
+ghost_state_init
+ghost_memory_append "$memory"
+echo "GHOST // remembered"

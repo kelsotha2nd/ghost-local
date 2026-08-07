@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+
+SOURCE="${BASH_SOURCE[0]}"
+ROOT="$(cd -P "$(dirname "$SOURCE")/.." >/dev/null 2>&1 && pwd)"
+# shellcheck source=state
+source "$ROOT/lib/state"
+ghost_state_init
+
+if [ ! -s "$GHOST_MEMORY_FILE" ]; then
+    echo "GHOST // no deliberate memories"
+    exit 0
+fi
+
+echo "GHOST // DELIBERATE MEMORIES"
+jq -r '"\n[\(.created_at)] \(.content)"' "$GHOST_MEMORY_FILE"

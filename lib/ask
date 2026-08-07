@@ -2,6 +2,8 @@
 
 SOURCE="${BASH_SOURCE[0]}"
 ROOT="$(cd -P "$(dirname "$SOURCE")/.." >/dev/null 2>&1 && pwd)"
+# shellcheck source=state
+source "$ROOT/lib/state"
 SYSTEM_MODEL_CONFIG="/etc/ghost/model.env"
 MODEL_CONFIG="$ROOT/config/model.env"
 
@@ -23,16 +25,19 @@ if [ -z "$question" ]; then
     exit 2
 fi
 
-for dependency in curl jq; do
+for dependency in curl jq flock; do
     if ! command -v "$dependency" >/dev/null 2>&1; then
         echo "GHOST // missing dependency: $dependency" >&2
         exit 3
     fi
 done
 
+ghost_state_init
+
 api_url="${GHOST_API_URL:-http://127.0.0.1:11434/v1/chat/completions}"
 model="${GHOST_MODEL:-}"
 max_tokens="${GHOST_MAX_TOKENS:-384}"
+history_messages="${GHOST_HISTORY_MESSAGES:-12}"
 
 if [ -z "$model" ]; then
     cat >&2 <<'EOF'
@@ -49,6 +54,17 @@ if [[ ! "$max_tokens" =~ ^[1-9][0-9]*$ ]]; then
     exit 3
 fi
 
+if [[ ! "$history_messages" =~ ^[1-9][0-9]*$ ]]; then
+    echo "GHOST // GHOST_HISTORY_MESSAGES must be a positive integer" >&2
+    exit 3
+fi
+
+history="[]"
+if [ -s "$GHOST_HISTORY_FILE" ]; then
+    history="$(tail -n "$history_messages" "$GHOST_HISTORY_FILE" |
+        jq -s '[.[] | {role: .role, content: .content}]')"
+fi
+
 context="$("$ROOT/lib/context")"
 system_prompt="${context}
 
@@ -62,11 +78,11 @@ payload="$(jq -n \
     --arg system "$system_prompt" \
     --arg question "$question" \
     --argjson max_tokens "$max_tokens" \
+    --argjson history "$history" \
     '{model: $model, stream: true, reasoning_effort: "none",
-      temperature: 0.6, max_tokens: $max_tokens, messages: [
-        {role: "system", content: $system},
-        {role: "user", content: $question}
-    ]}')"
+      temperature: 0.6, max_tokens: $max_tokens,
+      messages: ([{role: "system", content: $system}] + $history +
+        [{role: "user", content: $question}])}')"
 
 headers=(-H "Content-Type: application/json")
 if [ -n "${GHOST_API_KEY:-}" ]; then
@@ -74,6 +90,9 @@ if [ -n "${GHOST_API_KEY:-}" ]; then
 fi
 
 printf 'GHOST:\n'
+
+answer_file="$(mktemp)"
+trap 'rm -f "$answer_file"' EXIT
 
 curl --silent --show-error --fail-with-body --no-buffer \
     --max-time "${GHOST_API_TIMEOUT:-120}" \
@@ -83,7 +102,7 @@ curl --silent --show-error --fail-with-body --no-buffer \
         event="${line#data: }"
         [ "$event" = "[DONE]" ] && break
         jq -jr '.choices[0].delta.content // empty' <<< "$event" 2>/dev/null
-    done
+    done | tee "$answer_file"
 pipeline_status=("${PIPESTATUS[@]}")
 printf '\n'
 
@@ -96,3 +115,17 @@ if (( pipeline_status[1] != 0 )); then
     echo "GHOST // could not decode model response" >&2
     exit 5
 fi
+
+if (( pipeline_status[2] != 0 )); then
+    echo "GHOST // could not persist model response" >&2
+    exit 5
+fi
+
+answer="$(<"$answer_file")"
+if [ -z "$answer" ]; then
+    echo "GHOST // model backend returned no visible answer" >&2
+    exit 6
+fi
+
+ghost_history_append "user" "$question"
+ghost_history_append "assistant" "$answer"
