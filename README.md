@@ -216,3 +216,10 @@ issues the short-lived challenge. `authorize package edit` resolves that private
 challenge and invokes the narrow editor. Casual confirmations such as yes, yeah,
 sure, or do it do not match either command. The ID-based commands remain
 available for inspection and recovery.
+
+After an authorized edit, GHOST automatically verifies the recorded post-edit
+hash and trusted backup, parses the file, and evaluates the complete NixOS
+system with `nix-instantiate`. Evaluation produces a derivation but does not
+build or activate it. Failure restores the original file and mode; success moves
+the proposal to `validated-awaiting-activation`. `ghost verify <id>` exposes the
+same gate for recovery and diagnostics.

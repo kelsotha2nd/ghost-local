@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+ROOT="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." >/dev/null 2>&1 && pwd)"
+temporary_root="$(mktemp -d /tmp/ghost-verify-test.XXXXXX)"
+trap 'rm -r "$temporary_root"' EXIT
+export GHOST_STATE_DIR="$temporary_root/state"
+export GHOST_NIX_CONFIG_PATH="$temporary_root/configuration.nix"
+export GHOST_NIX_GHOST_MODULE_PATH="$temporary_root/ghost.nix"
+
+write_fixture() {
+    printf '%s\n' \
+        '{ pkgs, ... }:' \
+        '{' \
+        '  environment.systemPackages = with pkgs; [' \
+        '    curl' \
+        '  ];' \
+        '}' > "$GHOST_NIX_CONFIG_PATH"
+    printf '%s\n' '{ ... }: { }' > "$GHOST_NIX_GHOST_MODULE_PATH"
+}
+
+# shellcheck source=../lib/state
+source "$ROOT/lib/state"
+
+execute_fixture() {
+    local package="$1"
+    local proposal_id
+    proposal_id="$(ghost_proposal_save \
+        "add ${package} to configuration.nix" "change" \
+        "Scope. Steps. Risk. Validation. Rollback. Pending review.")"
+    "$ROOT/lib/approve" "$proposal_id" >/dev/null
+    "$ROOT/lib/challenge" "$proposal_id" >/dev/null
+    "$ROOT/lib/authorize" execution "$proposal_id" >/dev/null
+    GHOST_EXECUTOR_TEST_MODE=1 "$ROOT/lib/execute" "$proposal_id" >/dev/null
+    printf '%s\n' "$proposal_id"
+}
+
+write_fixture
+ghost_state_init
+proposal_id="$(execute_fixture htop)"
+verify_output="$(GHOST_VERIFY_TEST_MODE=1 GHOST_SKIP_FULL_EVALUATION=1 \
+    "$ROOT/lib/verify" "$proposal_id")"
+[[ "$verify_output" == *"NIXOS EVALUATION PASSED"* ]]
+[ "$(jq -r '.status' "$GHOST_PROPOSAL_FILE")" = "fixture-validated" ]
+
+write_fixture
+rollback_id="$(execute_fixture jq)"
+backup="$(jq -r '.execution.backup' "$GHOST_PROPOSAL_FILE")"
+backup_sha256="$(sha256sum "$backup" | awk '{print $1}')"
+set +e
+GHOST_VERIFY_TEST_MODE=1 GHOST_FORCE_EVALUATION_FAILURE=1 \
+    "$ROOT/lib/verify" "$rollback_id" >/dev/null 2>&1
+failure_status=$?
+set -e
+[ "$failure_status" -eq 11 ]
+[ "$backup_sha256" = "$(sha256sum "$GHOST_NIX_CONFIG_PATH" | awk '{print $1}')" ]
+[ "$(jq -r '.status' "$GHOST_PROPOSAL_FILE")" = "validation-failed-restored" ]
+
+write_fixture
+integrated_id="$(ghost_proposal_save \
+    "add htop to configuration.nix" "change" \
+    "Scope. Steps. Risk. Validation. Rollback. Pending review.")"
+"$ROOT/lib/approve" "$integrated_id" >/dev/null
+"$ROOT/lib/challenge" "$integrated_id" >/dev/null
+GHOST_AUTHORIZE_EXECUTE=1 GHOST_EXECUTOR_TEST_MODE=1 \
+    GHOST_VERIFY_TEST_MODE=1 GHOST_SKIP_FULL_EVALUATION=1 \
+    "$ROOT/lib/authorize" execution "$integrated_id" >/dev/null
+[ "$(jq -r '.status' "$GHOST_PROPOSAL_FILE")" = "fixture-validated" ]
+
+echo "verification tests passed"

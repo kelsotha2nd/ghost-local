@@ -110,5 +110,7 @@ echo "  execution: not run"
 
 if [ "${GHOST_AUTHORIZE_EXECUTE:-0}" = "1" ]; then
     echo
-    "$ROOT/lib/execute" "$proposal_id"
+    "$ROOT/lib/execute" "$proposal_id" || exit $?
+    echo
+    "$ROOT/lib/verify" "$proposal_id"
 fi

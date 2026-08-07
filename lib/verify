@@ -1,0 +1,144 @@
+#!/usr/bin/env bash
+
+set -o pipefail
+
+SOURCE="${BASH_SOURCE[0]}"
+ROOT="$(cd -P "$(dirname "$SOURCE")/.." >/dev/null 2>&1 && pwd)"
+# shellcheck source=state
+source "$ROOT/lib/state"
+
+proposal_id="${1:-}"
+if [ -z "$proposal_id" ]; then
+    echo "usage: ghost verify <proposal-id>" >&2
+    exit 2
+fi
+
+test_mode="${GHOST_VERIFY_TEST_MODE:-0}"
+if [ "$test_mode" = "1" ]; then
+    case "$GHOST_NIX_CONFIG_PATH" in
+        /tmp/*) ;;
+        *) echo "GHOST // verification fixture must live beneath /tmp" >&2; exit 21 ;;
+    esac
+else
+    [ "$GHOST_NIX_CONFIG_PATH" = "$HOME/.config/nixos/configuration.nix" ] && \
+        [ "$GHOST_NIX_GHOST_MODULE_PATH" = "$HOME/.config/nixos/modules/ghost.nix" ] || {
+        echo "GHOST // production verification target mismatch" >&2
+        exit 20
+    }
+fi
+
+for dependency in chmod cp flock jq mktemp mv nix-instantiate sha256sum stat; do
+    command -v "$dependency" >/dev/null 2>&1 || {
+        echo "GHOST // missing dependency: $dependency" >&2
+        exit 3
+    }
+done
+
+ghost_state_init
+[ -s "$GHOST_PROPOSAL_FILE" ] || {
+    echo "GHOST // active proposal unavailable" >&2
+    exit 4
+}
+
+{
+    flock -x 9
+    stored_id="$(jq -r '.id // empty' "$GHOST_PROPOSAL_FILE")"
+    status="$(jq -r '.status // empty' "$GHOST_PROPOSAL_FILE")"
+    backup="$(jq -r '.execution.backup // empty' "$GHOST_PROPOSAL_FILE")"
+    post_sha256="$(jq -r '.execution.post_sha256 // empty' "$GHOST_PROPOSAL_FILE")"
+    original_mode="$(jq -r '.execution.original_mode // empty' "$GHOST_PROPOSAL_FILE")"
+    original_sha256="$(jq -r '.machine_fingerprint.config.sha256 // empty' "$GHOST_PROPOSAL_FILE")"
+    original_module_sha256="$(jq -r '.machine_fingerprint.ghost_module.sha256 // empty' "$GHOST_PROPOSAL_FILE")"
+
+    [ "$proposal_id" = "$stored_id" ] || {
+        echo "GHOST // proposal ID mismatch; verification refused" >&2
+        exit 5
+    }
+    if [ "$test_mode" = "1" ]; then
+        expected_status="fixture-executed"
+        success_status="fixture-validated"
+    else
+        expected_status="executed-awaiting-activation"
+        success_status="validated-awaiting-activation"
+    fi
+    [ "$status" = "$expected_status" ] || {
+        echo "GHOST // proposal is not ready for verification: $status" >&2
+        exit 6
+    }
+    [ -f "$backup" ] && [ ! -L "$backup" ] || {
+        echo "GHOST // trusted execution backup unavailable" >&2
+        exit 7
+    }
+    [ "$(ghost_file_fingerprint "$backup")" = "$original_sha256" ] || {
+        echo "GHOST // backup fingerprint mismatch" >&2
+        exit 8
+    }
+    [ "$(ghost_file_fingerprint "$GHOST_NIX_CONFIG_PATH")" = "$post_sha256" ] || {
+        echo "GHOST // edited configuration changed before verification" >&2
+        exit 9
+    }
+    [ "$(ghost_file_fingerprint "$GHOST_NIX_GHOST_MODULE_PATH")" = "$original_module_sha256" ] || {
+        echo "GHOST // GHOST module changed before verification" >&2
+        exit 10
+    }
+
+    validation_error=""
+    derivation=""
+    if ! nix-instantiate --parse "$GHOST_NIX_CONFIG_PATH" >/dev/null 2>&1; then
+        validation_error="syntax parse failed"
+    elif [ "$test_mode" = "1" ] && [ "${GHOST_FORCE_EVALUATION_FAILURE:-0}" = "1" ]; then
+        validation_error="forced evaluation failure"
+    elif [ "$test_mode" = "1" ] && [ "${GHOST_SKIP_FULL_EVALUATION:-0}" = "1" ]; then
+        derivation="test-evaluation-skipped"
+    else
+        evaluation_output="$(nix-instantiate '<nixpkgs/nixos>' -A system \
+            -I "nixos-config=$GHOST_NIX_CONFIG_PATH" 2>&1)" || \
+            validation_error="full NixOS evaluation failed: ${evaluation_output##*$'\n'}"
+        [ -n "$validation_error" ] || derivation="${evaluation_output##*$'\n'}"
+    fi
+
+    verified_at="$(date --iso-8601=seconds)"
+    temporary="$(mktemp "$GHOST_STATE_DIR/.proposal.XXXXXX")"
+    if [ -n "$validation_error" ]; then
+        cp -p "$backup" "$GHOST_NIX_CONFIG_PATH"
+        chmod "$original_mode" "$GHOST_NIX_CONFIG_PATH"
+        restored_sha256="$(ghost_file_fingerprint "$GHOST_NIX_CONFIG_PATH")"
+        [ "$restored_sha256" = "$original_sha256" ] || {
+            echo "GHOST // CRITICAL: evaluation failed and rollback mismatched" >&2
+            exit 12
+        }
+        jq --arg verified_at "$verified_at" --arg error "$validation_error" \
+            '.status = "validation-failed-restored" |
+             .verification = {verified_at: $verified_at, result: "failed-restored",
+                              error: $error, activation: "not-run"}' \
+            "$GHOST_PROPOSAL_FILE" > "$temporary"
+        chmod 600 "$temporary"
+        mv "$temporary" "$GHOST_PROPOSAL_FILE"
+        jq -cn --arg event "validation-failed-restored" \
+            --arg proposal_id "$stored_id" --arg verified_at "$verified_at" \
+            --arg error "$validation_error" \
+            '{event: $event, proposal_id: $proposal_id, verified_at: $verified_at,
+              error: $error, activation: "not-run"}' >> "$GHOST_APPROVAL_AUDIT_FILE"
+        echo "GHOST // evaluation failed; original configuration restored" >&2
+        echo "GHOST // $validation_error" >&2
+        exit 11
+    fi
+
+    jq --arg status "$success_status" --arg verified_at "$verified_at" \
+        --arg derivation "$derivation" \
+        '.status = $status |
+         .verification = {verified_at: $verified_at, result: "passed",
+                          derivation: $derivation, activation: "not-run"}' \
+        "$GHOST_PROPOSAL_FILE" > "$temporary"
+    chmod 600 "$temporary"
+    mv "$temporary" "$GHOST_PROPOSAL_FILE"
+    jq -cn --arg event "nixos-evaluation-passed" --arg proposal_id "$stored_id" \
+        --arg verified_at "$verified_at" --arg derivation "$derivation" \
+        '{event: $event, proposal_id: $proposal_id, verified_at: $verified_at,
+          derivation: $derivation, activation: "not-run"}' \
+        >> "$GHOST_APPROVAL_AUDIT_FILE"
+} 9> "$GHOST_STATE_LOCK"
+
+echo "GHOST // NIXOS EVALUATION PASSED"
+echo "  derivation: $derivation"
+echo "  activation: not run"
