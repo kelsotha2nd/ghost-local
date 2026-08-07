@@ -6,6 +6,31 @@ transcript="$*"
 command="${transcript,,}"
 command="${command%[.!?]}"
 
+if [[ "$command" =~ ^(ghost[,[:space:]]+)?stage[[:space:]]+this[[:space:]]+proposal$ ]]; then
+    "$ROOT/lib/stage" || exit $?
+    if [ "${GHOST_VOICE_COMMAND_SPEAK:-0}" = "1" ]; then
+        "$ROOT/lib/speak" "The active proposal is staged. Nothing has executed. To perform the backed-up configuration edit without rebuilding, say authorize package edit." || true
+    fi
+    exit 0
+fi
+
+if [[ "$command" =~ ^(ghost[,[:space:]]+)?authorize[[:space:]]+package[[:space:]]+edit$ ]]; then
+    # shellcheck source=state
+    source "$ROOT/lib/state"
+    ghost_state_init
+    if [ ! -s "$GHOST_EXECUTION_CHALLENGE_FILE" ]; then
+        echo "GHOST // active execution challenge unavailable" >&2
+        exit 4
+    fi
+    proposal_id="$(jq -r '.proposal_id // empty' "$GHOST_EXECUTION_CHALLENGE_FILE")"
+    GHOST_AUTHORIZE_EXECUTE="${GHOST_VOICE_COMMAND_EXECUTE:-1}" \
+        "$ROOT/lib/authorize" execution "$proposal_id" || exit $?
+    if [ "${GHOST_VOICE_COMMAND_SPEAK:-0}" = "1" ]; then
+        "$ROOT/lib/speak" "The package edit completed with backup and validation. System activation has not run." || true
+    fi
+    exit 0
+fi
+
 if [[ "$command" =~ ^(ghost[,[:space:]]+)?execute[[:space:]]+approved[[:space:]]+proposal[[:space:]]+([0-9-]+)$ ]]; then
     proposal_id="${BASH_REMATCH[2]}"
     "$ROOT/lib/challenge" "$proposal_id" || exit $?

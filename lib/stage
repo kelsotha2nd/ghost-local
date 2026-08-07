@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+
+SOURCE="${BASH_SOURCE[0]}"
+ROOT="$(cd -P "$(dirname "$SOURCE")/.." >/dev/null 2>&1 && pwd)"
+# shellcheck source=state
+source "$ROOT/lib/state"
+ghost_state_init
+
+if [ ! -s "$GHOST_PROPOSAL_FILE" ]; then
+    echo "GHOST // no active proposal to stage" >&2
+    exit 4
+fi
+
+active_id="$(jq -r '.id // empty' "$GHOST_PROPOSAL_FILE")"
+proposal_id="${1:-$active_id}"
+status="$(jq -r '.status // empty' "$GHOST_PROPOSAL_FILE")"
+
+if [ "$proposal_id" != "$active_id" ]; then
+    echo "GHOST // proposal ID mismatch; staging refused" >&2
+    exit 5
+fi
+
+case "$status" in
+    pending-review)
+        "$ROOT/lib/approve" "$proposal_id" || exit $?
+        ;;
+    approved)
+        echo "GHOST // proposal already approved; refreshing execution challenge"
+        ;;
+    *)
+        echo "GHOST // proposal cannot be staged from status: $status" >&2
+        exit 6
+        ;;
+esac
+
+echo
+export GHOST_ACTIVE_PROPOSAL_CHALLENGE=1
+exec "$ROOT/lib/challenge" "$proposal_id"

@@ -64,6 +64,10 @@ case "${1:-}" in
         shift
         exec "$ROOT/lib/approve" "$@"
         ;;
+    stage)
+        shift
+        exec "$ROOT/lib/stage" "$@"
+        ;;
     execute)
         shift
         exec "$ROOT/lib/challenge" "$@"
@@ -103,6 +107,7 @@ GHOST // COMMANDS
   ghost propose <change> create and save a change proposal
   ghost proposal        review the active proposal
   ghost approve <id>    approve a proposal without executing it
+  ghost stage [id]      approve and challenge the active proposal
   ghost execute <id>    issue a deliberate execution challenge
   ghost authorize execution <id> authorize the locked executor
   ghost shadow [package] test execution on an isolated config clone

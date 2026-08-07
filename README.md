@@ -201,3 +201,18 @@ phrases `execute approved proposal <id>` and `authorize execution <id>`. Passing
 the challenge invokes only the narrow package editor described above. It stops
 after syntax validation with status `executed-awaiting-activation`; activation
 is a separate future capability.
+
+The normal voice flow hides proposal IDs and combines approval with challenge
+issuance while preserving those internal state transitions:
+
+```text
+request a package change
+stage this proposal
+authorize package edit
+```
+
+`stage this proposal` targets only the active pending proposal, approves it, and
+issues the short-lived challenge. `authorize package edit` resolves that private
+challenge and invokes the narrow editor. Casual confirmations such as yes, yeah,
+sure, or do it do not match either command. The ID-based commands remain
+available for inspection and recovery.

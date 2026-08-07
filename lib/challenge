@@ -97,4 +97,8 @@ echo "  proposal: $proposal_id"
 echo "  expires:  $expires_at"
 echo
 echo "To authorize the locked executor, say exactly:"
-echo "authorize execution $proposal_id"
+if [ "${GHOST_ACTIVE_PROPOSAL_CHALLENGE:-0}" = "1" ]; then
+    echo "authorize package edit"
+else
+    echo "authorize execution $proposal_id"
+fi

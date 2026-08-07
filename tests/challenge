@@ -19,13 +19,17 @@ ghost_state_init
 proposal_id="$(ghost_proposal_save \
     "add htop" "change" \
     "Scope. Steps. Risk. Validation. Rollback. Pending review.")"
-"$ROOT/lib/approve" "$proposal_id" >/dev/null
 
 set +e
 "$ROOT/lib/voice-command" "yes do it" >/dev/null 2>&1
 casual_status=$?
 set -e
 [ "$casual_status" -eq 64 ]
+[ "$(jq -r '.status' "$GHOST_PROPOSAL_FILE")" = "pending-review" ]
+
+stage_output="$("$ROOT/lib/voice-command" "Ghost, stage this proposal.")"
+[[ "$stage_output" == *"EXECUTION CHALLENGE ISSUED"* ]]
+[[ "$stage_output" == *"authorize package edit"* ]]
 [ "$(jq -r '.status' "$GHOST_PROPOSAL_FILE")" = "approved" ]
 
 challenge_output="$(GHOST_EXECUTION_CHALLENGE_TTL_SECONDS=120 \
@@ -41,7 +45,7 @@ set -e
 [ "$wrong_status" -eq 5 ]
 
 authorize_output="$(GHOST_VOICE_COMMAND_EXECUTE=0 "$ROOT/lib/voice-command" \
-    "authorize execution ${proposal_id}!")"
+    "authorize package edit!")"
 [[ "$authorize_output" == *"executor remains locked"* ]]
 [ "$(jq -r '.status' "$GHOST_PROPOSAL_FILE")" = "execution-authorized" ]
 [ "$(jq -r '.consumed' "$GHOST_EXECUTION_CHALLENGE_FILE")" = "true" ]
