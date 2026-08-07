@@ -9,7 +9,8 @@ It is not an operating system or a general-purpose AI framework.
 ## Current state
 
 - Bash runtime
-- System, desktop, power, memory, and Nix sensors
+- System, desktop, network, storage, power, memory, and Nix sensors
+- Local condition reporting for storage, battery, and system load
 - Machine-specific memory
 - Global command through a user-local symlink
 

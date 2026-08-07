@@ -22,7 +22,7 @@ echo "  user: $(whoami)"
 echo "  host: $(hostname)"
 echo
 
-for sensor in system desktop power memory nix; do
+for sensor in system desktop network storage power nix memory status; do
     sensor_path="$ROOT/sensors/$sensor"
 
     if [ -x "$sensor_path" ]; then
@@ -33,6 +33,3 @@ for sensor in system desktop power memory nix; do
 
     echo
 done
-
-echo "STATUS:"
-echo "  GHOST core active"

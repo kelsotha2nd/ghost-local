@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+
+echo "NETWORK:"
+
+interface=""
+if [ -r /proc/net/route ]; then
+    interface="$(awk '$2 == "00000000" && $4 ~ /0003/ {print $1; exit}' /proc/net/route)"
+fi
+
+if [ -z "$interface" ]; then
+    for candidate in /sys/class/net/*; do
+        [ "${candidate##*/}" = "lo" ] && continue
+        [ -r "$candidate/operstate" ] || continue
+        if [ "$(<"$candidate/operstate")" = "up" ]; then
+            interface="${candidate##*/}"
+            break
+        fi
+    done
+fi
+
+if [ -n "$interface" ]; then
+    state="unknown"
+    [ -r "/sys/class/net/$interface/operstate" ] && state="$(<"/sys/class/net/$interface/operstate")"
+    address_output="$(ip -4 -o addr show dev "$interface" scope global 2>/dev/null)"
+    address_status=$?
+    address="$(awk 'NR == 1 {sub(/\/.*/, "", $4); print $4}' <<< "$address_output")"
+    echo "  link: $interface ($state)"
+    if (( address_status != 0 )); then
+        echo "  ipv4: unavailable"
+    else
+        echo "  ipv4: ${address:-unassigned}"
+    fi
+else
+    echo "  link: offline"
+    echo "  ipv4: unassigned"
+fi
+
+vpn=""
+for candidate in /sys/class/net/wg* /sys/class/net/tun* /sys/class/net/tailscale*; do
+    [ -e "$candidate" ] || continue
+    [ "${candidate##*/}" = "$interface" ] && continue
+    vpn="${candidate##*/}"
+    break
+done
+echo "  tunnel: ${vpn:-none}"

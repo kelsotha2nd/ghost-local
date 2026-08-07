@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+
+echo "STORAGE:"
+
+read -r _ total used available capacity _ < <(df -Ph / 2>/dev/null | awk 'NR == 2')
+if [ -n "${capacity:-}" ]; then
+    echo "  root: $capacity used ($available free)"
+    echo "  size: $total"
+else
+    echo "  root: unknown"
+fi
+
+mounts="$(awk '$1 !~ /^(proc|sysfs|tmpfs|devtmpfs|cgroup|cgroup2|overlay)$/ {count++} END {print count + 0}' /proc/mounts 2>/dev/null)"
+echo "  mounts: ${mounts:-unknown}"

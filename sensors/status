@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+
+echo "STATUS:"
+echo "  core active"
+
+observations=()
+
+root_percent="$(df -P / 2>/dev/null | awk 'NR == 2 {gsub(/%/, "", $5); print $5}')"
+if [[ "$root_percent" =~ ^[0-9]+$ ]] && (( root_percent >= 85 )); then
+    observations+=("storage pressure at ${root_percent}%")
+fi
+
+for supply in /sys/class/power_supply/*; do
+    [ -r "$supply/type" ] || continue
+    [ "$(<"$supply/type")" = "Battery" ] || continue
+    capacity="$(<"$supply/capacity")"
+    state="$(<"$supply/status")"
+    if [[ "$capacity" =~ ^[0-9]+$ ]] && (( capacity <= 20 )) && [ "$state" != "Charging" ]; then
+        observations+=("battery low at ${capacity}%")
+    fi
+    break
+done
+
+read -r load _ < /proc/loadavg
+cpu_count="$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 1)"
+if awk -v current_load="$load" -v cpus="$cpu_count" 'BEGIN {exit !(current_load > cpus * 1.5)}'; then
+    observations+=("load elevated at $load")
+fi
+
+if (( ${#observations[@]} == 0 )); then
+    echo "  machine nominal"
+else
+    for observation in "${observations[@]}"; do
+        echo "  notice: $observation"
+    done
+fi
