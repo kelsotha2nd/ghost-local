@@ -1,17 +1,5 @@
-# Python
-__pycache__/
-*.pyc
-
-# Environment
+# Local environment
 .env
-.venv/
-
-# AI data
-data/*.db
-data/*.json
-
-# Models
-models/
 
 # OS junk
 .DS_Store

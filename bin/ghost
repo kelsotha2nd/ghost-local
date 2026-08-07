@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+
+SOURCE="${BASH_SOURCE[0]}"
+
+while [ -L "$SOURCE" ]; do
+    DIR="$(cd -P "$(dirname "$SOURCE")" >/dev/null 2>&1 && pwd)"
+    SOURCE="$(readlink "$SOURCE")"
+
+    [[ "$SOURCE" != /* ]] && SOURCE="$DIR/$SOURCE"
+done
+
+SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE")" >/dev/null 2>&1 && pwd)"
+ROOT="$(dirname "$SCRIPT_DIR")"
+
+echo "========================"
+echo " GHOST // ONLINE"
+echo "========================"
+echo
+
+echo "IDENTITY:"
+echo "  user: $(whoami)"
+echo "  host: $(hostname)"
+echo
+
+for sensor in system desktop power memory nix; do
+    sensor_path="$ROOT/sensors/$sensor"
+
+    if [ -x "$sensor_path" ]; then
+        "$sensor_path" || echo "  sensor fault: $sensor"
+    else
+        printf '%s:\n  sensor offline\n' "${sensor^^}"
+    fi
+
+    echo
+done
+
+echo "STATUS:"
+echo "  GHOST core active"

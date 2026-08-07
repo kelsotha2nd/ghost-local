@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+
+SOURCE="${BASH_SOURCE[0]}"
+ROOT="$(cd -P "$(dirname "$SOURCE")/.." >/dev/null 2>&1 && pwd)"
+MEMORY="$ROOT/memory/machine.md"
+
+echo "MEMORY:"
+
+if [ -f "$MEMORY" ]; then
+    awk '
+        /^(Name|Purpose|Style):$/ {
+            field=tolower(substr($0, 1, length($0) - 1))
+            getline
+            printf "  %-8s %s\n", field ":", $0
+        }
+    ' "$MEMORY"
+else
+    echo "  no memory loaded"
+fi

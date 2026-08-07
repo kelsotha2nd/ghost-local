@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+
+echo "POWER:"
+
+battery=""
+for supply in /sys/class/power_supply/*; do
+    [ -r "$supply/type" ] || continue
+    if [ "$(<"$supply/type")" = "Battery" ]; then
+        battery="$supply"
+        break
+    fi
+done
+
+if [ -n "$battery" ]; then
+    capacity="$(<"$battery/capacity")"
+    status="$(<"$battery/status")"
+    (( capacity > 100 )) && capacity=100
+    (( capacity < 0 )) && capacity=0
+    echo "  battery: $capacity% (${status,,})"
+else
+    echo "  battery: not present"
+fi

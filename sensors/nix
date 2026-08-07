@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+
+echo "NIX:"
+
+generation="unknown"
+profile_link="$(readlink /nix/var/nix/profiles/system 2>/dev/null || true)"
+if [[ "$profile_link" =~ system-([0-9]+)-link ]]; then
+    generation="${BASH_REMATCH[1]}"
+fi
+echo "  generation: $generation"
+
+store_usage="$(du -sh /nix/store 2>/dev/null | awk '{print $1}')"
+echo "  store:      ${store_usage:-unknown}"
+
+# Report the caller's working tree when GHOST is invoked from one.
+if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    changes="$(git status --short | awk 'END {print NR}')"
+    echo "  workspace:  $changes changes"
+else
+    echo "  workspace:  outside git"
+fi

@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+
+echo "DESKTOP:"
+echo "  wm:      ${XDG_CURRENT_DESKTOP:-unknown}"
+echo "  session: ${XDG_SESSION_TYPE:-unknown}"
+echo "  shell:   ${SHELL:-unknown}"
