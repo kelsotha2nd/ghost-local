@@ -24,6 +24,7 @@ assert_route fast inspect "is Ollama active?"
 assert_route smart inspect "diagnose why my NixOS rebuild failed"
 assert_route smart change "rebuild my NixOS system"
 assert_route smart change "edit my Nix configuration"
+assert_route smart change "add btop to my Nix configuration"
 assert_route smart protected-change "wipe the disk and start over"
 assert_route smart conversation "use the smart model and think carefully"
 
