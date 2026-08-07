@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+
+SOURCE="${BASH_SOURCE[0]}"
+ROOT="$(cd -P "$(dirname "$SOURCE")/.." >/dev/null 2>&1 && pwd)"
+# shellcheck source=voice-config
+source "$ROOT/lib/voice-config"
+
+display=0
+if [ "${1:-}" = "--display" ]; then
+    display=1
+    shift
+fi
+
+mode="${GHOST_VOICE_ROUTE:-auto}"
+query="$*"
+lower="${query,,}"
+lane="fast"
+reason="conversation"
+
+case "$mode" in
+    fast|smart)
+        lane="$mode"
+        reason="manual override"
+        ;;
+    auto)
+        if [[ "$lower" =~ (smart[[:space:]]+mode|use[[:space:]]+(the[[:space:]]+)?(smart|bigger|8b)[[:space:]]+model|think[[:space:]]+(hard|carefully|deeply)|take[[:space:]]+your[[:space:]]+time) ]]; then
+            lane="smart"
+            reason="explicit request"
+        elif [[ "$lower" =~ (fix|debug|diagnos|troubleshoot|investigat|repair|implement|refactor|configure|rebuild|rollback|restore|install|uninstall|upgrade|deploy|commit|push|audit|secure|optimi[sz]e|benchmark|plan|design|create|edit|modify|change|write[[:space:]]+(a|the|some)?[[:space:]]*(code|script|module|config)) ]]; then
+            lane="smart"
+            reason="technical work"
+        elif [[ "$lower" =~ (why[[:space:]]|how[[:space:]]+should|compare|analy[sz]e|explain|recommend|best[[:space:]]+way|trade.?off|root[[:space:]]+cause|step.?by.?step|what[[:space:]]+should[[:space:]]+we[[:space:]]+(do|build|change)) ]]; then
+            lane="smart"
+            reason="deeper reasoning"
+        elif (( ${#query} >= ${GHOST_SMART_QUERY_LENGTH:-180} )); then
+            lane="smart"
+            reason="complex request"
+        fi
+        ;;
+    *)
+        echo "GHOST // GHOST_VOICE_ROUTE must be auto, fast, or smart" >&2
+        exit 2
+        ;;
+esac
+
+if (( display )); then
+    if [ "$lane" = "smart" ]; then
+        model="${GHOST_SMART_MODEL:-qwen3:8b}"
+    else
+        model="${GHOST_VOICE_MODEL:-qwen3:4b-instruct}"
+    fi
+    printf 'GHOST // ROUTE: %s — %s\n  model: %s\n' \
+        "${lane^^}" "$reason" "$model"
+else
+    printf '%s\t%s\n' "$lane" "$reason"
+fi

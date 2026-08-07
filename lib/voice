@@ -6,11 +6,22 @@ ROOT="$(cd -P "$(dirname "$SOURCE")/.." >/dev/null 2>&1 && pwd)"
 source "$ROOT/lib/voice-config"
 
 export GHOST_SHOW_TIMING=1
-export GHOST_MODEL_OVERRIDE="${GHOST_VOICE_MODEL:-qwen3:4b-instruct}"
-export GHOST_MAX_TOKENS="${GHOST_VOICE_MAX_TOKENS:-128}"
-export GHOST_HISTORY_MESSAGES="${GHOST_VOICE_HISTORY_MESSAGES:-6}"
-export GHOST_CONTEXT_MODE="compact"
 
 transcript="$("$ROOT/lib/listen" "${1:-}")" || exit $?
 echo "YOU: $transcript"
+
+IFS=$'\t' read -r lane route_reason < <("$ROOT/lib/route" "$transcript") || exit $?
+if [ "$lane" = "smart" ]; then
+    export GHOST_MODEL_OVERRIDE="${GHOST_SMART_MODEL:-qwen3:8b}"
+    export GHOST_MAX_TOKENS="${GHOST_SMART_MAX_TOKENS:-256}"
+    export GHOST_HISTORY_MESSAGES="${GHOST_SMART_HISTORY_MESSAGES:-12}"
+    export GHOST_CONTEXT_MODE="full"
+else
+    export GHOST_MODEL_OVERRIDE="${GHOST_VOICE_MODEL:-qwen3:4b-instruct}"
+    export GHOST_MAX_TOKENS="${GHOST_VOICE_MAX_TOKENS:-128}"
+    export GHOST_HISTORY_MESSAGES="${GHOST_VOICE_HISTORY_MESSAGES:-6}"
+    export GHOST_CONTEXT_MODE="compact"
+fi
+
+printf 'GHOST // ROUTE: %s — %s\n' "${lane^^}" "$route_reason"
 GHOST_SPEAK_RESPONSE=1 exec "$ROOT/lib/ask" "$transcript"

@@ -97,13 +97,21 @@ or output can be selected in ignored `config/voice.env` using the node names or
 IDs shown by `ghost audio`.
 
 Voice mode reports capture, transcription, model, synthesis, and playback
-timings. It uses the faster non-thinking `qwen3:4b-instruct`, a smaller 128-token response budget,
-six recent messages, and a compact live context by default. Terminal
-conversation retains `qwen3:8b`, its full machine context, and larger settings. Use
-`ghost benchmark` for a repeatable local model throughput measurement before
-and after runtime or acceleration changes. Pass a model name to compare lanes:
+timings. It uses the faster non-thinking `qwen3:4b-instruct`, a smaller
+128-token response budget, six recent messages, and a compact live context by
+default. Terminal conversation retains `qwen3:8b`, its full machine context,
+and larger settings. Use `ghost benchmark` for a repeatable local model
+throughput measurement before and after runtime or acceleration changes. Pass
+a model name to compare lanes:
 
 ```bash
 ghost benchmark qwen3:4b-instruct
 ghost benchmark qwen3:8b
 ```
+
+Voice routing is automatic. Greetings, simple questions, and machine lookups use
+the fast lane. Diagnosis, configuration changes, coding, planning, and deeper
+reasoning escalate to the smart lane with full context. GHOST prints the selected
+route before answering. Inspect routing without recording audio using
+`ghost route <request>`, or set `GHOST_VOICE_ROUTE=fast` or `smart` in the ignored
+`config/voice.env` to force a lane temporarily.
