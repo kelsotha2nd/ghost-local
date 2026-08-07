@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+ROOT="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." >/dev/null 2>&1 && pwd)"
+
+for test_name in normalize route inspect proposal approve challenge execute shadow; do
+    "$ROOT/tests/$test_name"
+done
+
+echo "all GHOST tests passed"

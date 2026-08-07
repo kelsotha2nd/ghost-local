@@ -66,7 +66,11 @@ case "${1:-}" in
         ;;
     execute)
         shift
-        exec "$ROOT/lib/execute" "$@"
+        exec "$ROOT/lib/challenge" "$@"
+        ;;
+    authorize)
+        shift
+        exec "$ROOT/lib/authorize" "$@"
         ;;
     shadow)
         shift
@@ -98,7 +102,8 @@ GHOST // COMMANDS
   ghost propose <change> create and save a change proposal
   ghost proposal        review the active proposal
   ghost approve <id>    approve a proposal without executing it
-  ghost execute <id>    execute an approved proposal (production locked)
+  ghost execute <id>    issue a deliberate execution challenge
+  ghost authorize execution <id> authorize the locked executor
   ghost shadow [package] test execution on an isolated config clone
   ghost audio           inspect audio devices and selection
   ghost benchmark [model] measure local model throughput

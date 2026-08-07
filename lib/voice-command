@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+
+SOURCE="${BASH_SOURCE[0]}"
+ROOT="$(cd -P "$(dirname "$SOURCE")/.." >/dev/null 2>&1 && pwd)"
+transcript="$*"
+command="${transcript,,}"
+command="${command%[.!?]}"
+
+if [[ "$command" =~ ^(ghost[,[:space:]]+)?execute[[:space:]]+approved[[:space:]]+proposal[[:space:]]+([0-9-]+)$ ]]; then
+    proposal_id="${BASH_REMATCH[2]}"
+    "$ROOT/lib/challenge" "$proposal_id" || exit $?
+    if [ "${GHOST_VOICE_COMMAND_SPEAK:-0}" = "1" ]; then
+        "$ROOT/lib/speak" "Execution challenge issued for proposal ${proposal_id}. Nothing has executed. Say authorize execution ${proposal_id} to continue." || true
+    fi
+    exit 0
+fi
+
+if [[ "$command" =~ ^(ghost[,[:space:]]+)?authorize[[:space:]]+execution[[:space:]]+([0-9-]+)$ ]]; then
+    proposal_id="${BASH_REMATCH[2]}"
+    "$ROOT/lib/authorize" execution "$proposal_id" || exit $?
+    if [ "${GHOST_VOICE_COMMAND_SPEAK:-0}" = "1" ]; then
+        "$ROOT/lib/speak" "Execution authorized for proposal ${proposal_id}. The executor remains locked, and nothing has run." || true
+    fi
+    exit 0
+fi
+
+exit 64

@@ -14,6 +14,14 @@ if [ "$transcript" != "$raw_transcript" ]; then
 fi
 echo "YOU: $transcript"
 
+GHOST_VOICE_COMMAND_SPEAK=1 "$ROOT/lib/voice-command" "$transcript"
+voice_command_status=$?
+if [ "$voice_command_status" -eq 0 ]; then
+    exit 0
+elif [ "$voice_command_status" -ne 64 ]; then
+    exit "$voice_command_status"
+fi
+
 IFS=$'\t' read -r lane route_reason request_intent < <("$ROOT/lib/route" "$transcript") || exit $?
 export GHOST_REQUEST_INTENT="$request_intent"
 if [ "$lane" = "smart" ]; then

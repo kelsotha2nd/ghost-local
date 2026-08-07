@@ -20,7 +20,7 @@ intent="conversation"
 
 if [[ "$lower" =~ (wipe|erase|destroy|format[[:space:]]+(the[[:space:]]+)?(disk|drive|filesystem)|factory[[:space:]]+reset|reset[[:space:]]+--hard|delete[[:space:]]+(all|every|the[[:space:]]+system)) ]]; then
     intent="protected-change"
-elif [[ "$lower" =~ (fix|repair|implement|refactor|configure|rollback|restore|install|uninstall|remove|upgrade|update|deploy|commit|push|add|create|edit|modify|change|restart|enable|disable|rebuild[[:space:]]+(my|the|this|nixos|system|machine|configuration)|run[[:space:]]+(a[[:space:]]+)?rebuild|write[[:space:]]+(a|the|some)?[[:space:]]*(code|script|module|config)) ]]; then
+elif [[ "$lower" =~ (fix|repair|implement|refactor|configure|rollback|restore|install|uninstall|remove|upgrade|update|deploy|commit|push|add|create|edit|modify|change|restart|enable|disable|execute|authorize|rebuild[[:space:]]+(my|the|this|nixos|system|machine|configuration)|run[[:space:]]+(a[[:space:]]+)?rebuild|write[[:space:]]+(a|the|some)?[[:space:]]*(code|script|module|config)) ]]; then
     intent="change"
 elif [[ "$lower" =~ (check|inspect|show|list|status|diagnos|debug|troubleshoot|investigat|analy[sz]e|audit|explain|service|daemon|systemd|ollama|process|why[[:space:]]|what[[:space:]]+is|how[[:space:]]+much) ]]; then
     intent="inspect"

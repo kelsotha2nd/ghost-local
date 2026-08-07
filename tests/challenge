@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+ROOT="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." >/dev/null 2>&1 && pwd)"
+temporary_state="$(mktemp -d)"
+trap 'rm -r "$temporary_state"' EXIT
+export GHOST_STATE_DIR="$temporary_state/state"
+export GHOST_NIX_CONFIG_PATH="$temporary_state/configuration.nix"
+export GHOST_NIX_GHOST_MODULE_PATH="$temporary_state/ghost.nix"
+printf '%s\n' '{ pkgs, ... }: { environment.systemPackages = [ ]; }' \
+    > "$GHOST_NIX_CONFIG_PATH"
+printf '%s\n' '{ ... }: { }' > "$GHOST_NIX_GHOST_MODULE_PATH"
+
+# shellcheck source=../lib/state
+source "$ROOT/lib/state"
+ghost_state_init
+
+proposal_id="$(ghost_proposal_save \
+    "add htop" "change" \
+    "Scope. Steps. Risk. Validation. Rollback. Pending review.")"
+"$ROOT/lib/approve" "$proposal_id" >/dev/null
+
+set +e
+"$ROOT/lib/voice-command" "yes do it" >/dev/null 2>&1
+casual_status=$?
+set -e
+[ "$casual_status" -eq 64 ]
+[ "$(jq -r '.status' "$GHOST_PROPOSAL_FILE")" = "approved" ]
+
+challenge_output="$(GHOST_EXECUTION_CHALLENGE_TTL_SECONDS=120 \
+    "$ROOT/lib/voice-command" "Ghost, execute approved proposal ${proposal_id}.")"
+[[ "$challenge_output" == *"nothing executed"* ]]
+[ "$(stat -c '%a' "$GHOST_EXECUTION_CHALLENGE_FILE")" = "600" ]
+[ "$(jq -r '.consumed' "$GHOST_EXECUTION_CHALLENGE_FILE")" = "false" ]
+
+set +e
+"$ROOT/lib/authorize" execution wrong-id >/dev/null 2>&1
+wrong_status=$?
+set -e
+[ "$wrong_status" -eq 5 ]
+
+authorize_output="$("$ROOT/lib/voice-command" \
+    "authorize execution ${proposal_id}!")"
+[[ "$authorize_output" == *"executor remains locked"* ]]
+[ "$(jq -r '.status' "$GHOST_PROPOSAL_FILE")" = "execution-authorized" ]
+[ "$(jq -r '.consumed' "$GHOST_EXECUTION_CHALLENGE_FILE")" = "true" ]
+[ "$(jq -r '.nonce // empty' "$GHOST_EXECUTION_CHALLENGE_FILE")" = "" ]
+
+expired_id="$(ghost_proposal_save \
+    "add jq" "change" \
+    "Scope. Steps. Risk. Validation. Rollback. Pending review.")"
+"$ROOT/lib/approve" "$expired_id" >/dev/null
+"$ROOT/lib/challenge" "$expired_id" >/dev/null
+expired_file="$temporary_state/expired-challenge"
+jq '.expires_epoch = 0' "$GHOST_EXECUTION_CHALLENGE_FILE" > "$expired_file"
+mv "$expired_file" "$GHOST_EXECUTION_CHALLENGE_FILE"
+set +e
+"$ROOT/lib/authorize" execution "$expired_id" >/dev/null 2>&1
+expired_status=$?
+set -e
+[ "$expired_status" -eq 8 ]
+
+echo "challenge tests passed"

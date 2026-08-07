@@ -1,0 +1,100 @@
+#!/usr/bin/env bash
+
+set -o pipefail
+
+SOURCE="${BASH_SOURCE[0]}"
+ROOT="$(cd -P "$(dirname "$SOURCE")/.." >/dev/null 2>&1 && pwd)"
+# shellcheck source=state
+source "$ROOT/lib/state"
+
+proposal_id="${1:-}"
+if [ -z "$proposal_id" ]; then
+    echo "usage: ghost execute <proposal-id>" >&2
+    exit 2
+fi
+
+ghost_state_init
+if [ ! -s "$GHOST_PROPOSAL_FILE" ] || [ ! -s "$GHOST_APPROVAL_CREDENTIAL_FILE" ]; then
+    echo "GHOST // approved proposal credential unavailable" >&2
+    exit 4
+fi
+
+{
+    flock -x 9
+    stored_id="$(jq -r '.id // empty' "$GHOST_PROPOSAL_FILE")"
+    status="$(jq -r '.status // empty' "$GHOST_PROPOSAL_FILE")"
+    intent="$(jq -r '.intent // empty' "$GHOST_PROPOSAL_FILE")"
+    request="$(jq -r '.request // empty' "$GHOST_PROPOSAL_FILE")"
+    plan="$(jq -r '.plan // empty' "$GHOST_PROPOSAL_FILE")"
+    digest="$(jq -r '.digest // empty' "$GHOST_PROPOSAL_FILE")"
+    approval_expiry="$(jq -r '.approval.expires_epoch // 0' "$GHOST_PROPOSAL_FILE")"
+
+    [ "$proposal_id" = "$stored_id" ] || {
+        echo "GHOST // proposal ID mismatch; challenge refused" >&2
+        exit 5
+    }
+    [ "$status" = "approved" ] || {
+        echo "GHOST // proposal is not approved: $status" >&2
+        exit 6
+    }
+    [ "$intent" = "change" ] || {
+        echo "GHOST // protected changes cannot receive an execution challenge" >&2
+        exit 7
+    }
+    now_epoch="$(date +%s)"
+    [ "$now_epoch" -lt "$approval_expiry" ] || {
+        echo "GHOST // proposal approval expired" >&2
+        exit 8
+    }
+
+    computed_digest="$(printf '%s\0%s\0%s' "$request" "$intent" "$plan" | sha256sum | awk '{print $1}')"
+    [ "$computed_digest" = "$digest" ] || {
+        echo "GHOST // proposal digest mismatch; challenge refused" >&2
+        exit 9
+    }
+    [ "$(ghost_machine_fingerprint)" = "$(jq -c '.machine_fingerprint' "$GHOST_PROPOSAL_FILE")" ] || {
+        echo "GHOST // machine configuration changed; challenge refused" >&2
+        exit 10
+    }
+
+    credential_id="$(jq -r '.proposal_id // empty' "$GHOST_APPROVAL_CREDENTIAL_FILE")"
+    credential_digest="$(jq -r '.digest // empty' "$GHOST_APPROVAL_CREDENTIAL_FILE")"
+    credential_expiry="$(jq -r '.expires_epoch // 0' "$GHOST_APPROVAL_CREDENTIAL_FILE")"
+    token="$(jq -r '.token // empty' "$GHOST_APPROVAL_CREDENTIAL_FILE")"
+    token_sha256="$(printf '%s' "$token" | sha256sum | awk '{print $1}')"
+    stored_token_sha256="$(jq -r '.approval.token_sha256 // empty' "$GHOST_PROPOSAL_FILE")"
+    if [ "$credential_id" != "$stored_id" ] || \
+        [ "$credential_digest" != "$digest" ] || \
+        [ "$credential_expiry" != "$approval_expiry" ] || \
+        [ "$token_sha256" != "$stored_token_sha256" ]; then
+        echo "GHOST // approval credential mismatch; challenge refused" >&2
+        exit 11
+    fi
+
+    ttl="${GHOST_EXECUTION_CHALLENGE_TTL_SECONDS:-120}"
+    [[ "$ttl" =~ ^[1-9][0-9]*$ ]] || {
+        echo "GHOST // invalid execution challenge TTL" >&2
+        exit 3
+    }
+    expires_epoch="$((now_epoch + ttl))"
+    [ "$expires_epoch" -le "$approval_expiry" ] || expires_epoch="$approval_expiry"
+    created_at="$(date --iso-8601=seconds)"
+    expires_at="$(date --date="@${expires_epoch}" --iso-8601=seconds)"
+    nonce="$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
+    temporary="$(mktemp "$GHOST_STATE_DIR/.challenge.XXXXXX")"
+    jq -cn --arg proposal_id "$stored_id" --arg digest "$digest" \
+        --arg nonce "$nonce" --arg created_at "$created_at" \
+        --arg expires_at "$expires_at" --argjson expires_epoch "$expires_epoch" \
+        '{proposal_id: $proposal_id, digest: $digest, nonce: $nonce,
+          created_at: $created_at, expires_at: $expires_at,
+          expires_epoch: $expires_epoch, consumed: false}' > "$temporary"
+    chmod 600 "$temporary"
+    mv "$temporary" "$GHOST_EXECUTION_CHALLENGE_FILE"
+} 9> "$GHOST_STATE_LOCK"
+
+echo "GHOST // EXECUTION CHALLENGE ISSUED — nothing executed"
+echo "  proposal: $proposal_id"
+echo "  expires:  $expires_at"
+echo
+echo "To authorize the locked executor, say exactly:"
+echo "authorize execution $proposal_id"

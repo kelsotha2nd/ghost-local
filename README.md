@@ -186,3 +186,17 @@ into an isolated directory beneath `/tmp`, runs the full approved fixture edit,
 then forces validation failure on a fresh clone and verifies exact rollback. It
 hashes and checks the modes of the source files before and after the run and
 removes the temporary workspace when finished.
+
+Execution authorization uses a second deliberate, short-lived gate:
+
+```text
+ghost execute <proposal-id>
+ghost authorize execution <proposal-id>
+```
+
+The first command issues a two-minute challenge after rechecking approval,
+digest, credential, expiry, and machine fingerprints. The second command must
+match exactly; casual confirmation is ignored. Voice accepts only the exact
+phrases `execute approved proposal <id>` and `authorize execution <id>`. Passing
+the challenge records authorization but still performs no edit because the
+production executor remains locked.
