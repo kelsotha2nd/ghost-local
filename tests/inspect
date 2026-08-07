@@ -11,6 +11,10 @@ services_output="$("$ROOT/lib/inspect" services)"
 process_output="$("$ROOT/lib/inspect" processes)"
 [[ "$process_output" == *"TOP PROCESSES BY CPU:"* ]]
 
+config_output="$("$ROOT/lib/inspect" config)"
+[[ "$config_output" == *"classic module tree"* ]]
+[[ "$config_output" == *"nix-instantiate --parse /home/${USER}/.config/nixos/configuration.nix"* ]]
+
 auto_output="$("$ROOT/lib/inspect" --auto "diagnose why the system feels slow")"
 [[ "$auto_output" == *"--- HEALTH ---"* ]]
 [[ "$auto_output" == *"--- PROCESSES ---"* ]]

@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+ROOT="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." >/dev/null 2>&1 && pwd)"
+temporary_state="$(mktemp -d)"
+trap 'rm -r "$temporary_state"' EXIT
+export GHOST_STATE_DIR="$temporary_state"
+
+# shellcheck source=../lib/state
+source "$ROOT/lib/state"
+ghost_state_init
+
+proposal_id="$(ghost_proposal_save \
+    "update the test configuration" \
+    "change" \
+    "Scope: test only. Validation: parse. Rollback: revert.")"
+
+[ -n "$proposal_id" ]
+[ "$(jq -r '.status' "$GHOST_PROPOSAL_FILE")" = "pending-review" ]
+[ "$(jq -r '.intent' "$GHOST_PROPOSAL_FILE")" = "change" ]
+proposal_output="$("$ROOT/lib/proposal")"
+[[ "$proposal_output" == *"GHOST // ACTIVE PROPOSAL"* ]]
+[[ "$proposal_output" == *"update the test configuration"* ]]
+
+echo "proposal tests passed"

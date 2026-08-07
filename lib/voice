@@ -28,9 +28,14 @@ printf 'GHOST // ROUTE: %s — %s\n' "${lane^^}" "$route_reason"
 if [[ "$request_intent" = *change ]]; then
     printf 'GHOST // SAFETY GATE: %s — approval required before execution\n' \
         "${request_intent^^}"
+    export GHOST_PROPOSAL_MODE=1
+    export GHOST_SAVE_PROPOSAL=1
+    export GHOST_MAX_TOKENS="${GHOST_PROPOSAL_MAX_TOKENS:-384}"
+    export GHOST_CONTEXT_MODE="compact"
+    export GHOST_API_TIMEOUT="${GHOST_PROPOSAL_TIMEOUT:-240}"
 fi
 
-if [ "$request_intent" = "inspect" ]; then
+if [ "$request_intent" = "inspect" ] || [[ "$request_intent" = *change ]]; then
     tool_context="$("$ROOT/lib/inspect" --auto "$transcript")"
     if [ -n "$tool_context" ]; then
         export GHOST_TOOL_CONTEXT="$tool_context"

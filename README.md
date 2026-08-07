@@ -136,3 +136,15 @@ Smart voice investigations automatically attach relevant results from these
 tools for service, performance, process, and Nix configuration questions. The
 runner accepts inspection targets rather than arbitrary shell commands and has
 no mutation path.
+
+Change requests use the smart model to create a proposal containing scope,
+ordered steps, risks, validation, and rollback. The newest proposal is stored
+privately under GHOST's state directory with `pending-review` status:
+
+```bash
+ghost propose "install a Nix package for this machine"
+ghost proposal
+```
+
+Voice change requests use the same proposal path automatically. Saving a
+proposal does not approve or execute it.

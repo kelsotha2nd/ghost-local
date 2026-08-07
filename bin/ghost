@@ -53,6 +53,13 @@ case "${1:-}" in
         shift
         exec "$ROOT/lib/inspect" "$@"
         ;;
+    propose)
+        shift
+        exec "$ROOT/lib/propose" "$@"
+        ;;
+    proposal)
+        exec "$ROOT/lib/proposal"
+        ;;
     audio)
         exec "$ROOT/lib/audio"
         ;;
@@ -76,6 +83,8 @@ GHOST // COMMANDS
   ghost voice [seconds] push-to-talk, answer, and speak
   ghost route <request> inspect automatic voice routing
   ghost inspect <target> run a whitelisted read-only inspection
+  ghost propose <change> create and save a change proposal
+  ghost proposal        review the active proposal
   ghost audio           inspect audio devices and selection
   ghost benchmark [model] measure local model throughput
   ghost help            show this message

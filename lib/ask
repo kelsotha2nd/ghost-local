@@ -108,6 +108,21 @@ ${GHOST_TOOL_CONTEXT}
 Use these results as observed evidence. They do not authorize any mutation."
 fi
 
+if [ "${GHOST_PROPOSAL_MODE:-0}" = "1" ]; then
+    system_prompt="${system_prompt}
+
+=== PROPOSAL CONTRACT ===
+Produce a proposal only; do not execute or imply execution. Identify the exact
+scope and targets, ordered steps, risk level and failure modes, validation after
+each material step, and a rollback path. Separate observed facts from
+assumptions. Only name commands and paths supported by supplied evidence; never
+invent a flake workflow, validator, service, package, or file location. If
+required information is missing, make inspection the first step. Use exact
+targets in commands, never placeholders such as <file>. Keep the plan concise
+but complete and under 250 words. End by stating that it is pending review, not
+approved."
+fi
+
 if [ "${GHOST_SPEAK_RESPONSE:-0}" = "1" ]; then
     system_prompt="${system_prompt}
 This response will be spoken aloud. Use plain conversational text without
@@ -133,7 +148,8 @@ fi
 printf 'GHOST:\n'
 
 answer_file="$(mktemp)"
-trap 'rm -f "$answer_file"' EXIT
+finish_file="$(mktemp)"
+trap 'rm -f "$answer_file" "$finish_file"' EXIT
 model_started="$(date +%s%3N)"
 
 curl --silent --show-error --fail-with-body --no-buffer \
@@ -143,6 +159,8 @@ curl --silent --show-error --fail-with-body --no-buffer \
         [[ "$line" == data:* ]] || continue
         event="${line#data: }"
         [ "$event" = "[DONE]" ] && break
+        finish_reason="$(jq -r '.choices[0].finish_reason // empty' <<< "$event" 2>/dev/null)"
+        [ -n "$finish_reason" ] && printf '%s\n' "$finish_reason" > "$finish_file"
         jq -jr '.choices[0].delta.content // empty' <<< "$event" 2>/dev/null
     done | tee "$answer_file"
 pipeline_status=("${PIPESTATUS[@]}")
@@ -150,7 +168,11 @@ model_finished="$(date +%s%3N)"
 printf '\n'
 
 if (( pipeline_status[0] != 0 )); then
-    echo "GHOST // model backend unreachable at $api_url" >&2
+    if (( pipeline_status[0] == 28 )); then
+        echo "GHOST // model request timed out; nothing was committed" >&2
+    else
+        echo "GHOST // model backend unreachable at $api_url" >&2
+    fi
     exit 4
 fi
 
@@ -168,6 +190,18 @@ answer="$(<"$answer_file")"
 if [ -z "$answer" ]; then
     echo "GHOST // model backend returned no visible answer" >&2
     exit 6
+fi
+
+finish_reason="$(<"$finish_file")"
+if [ "${GHOST_SAVE_PROPOSAL:-0}" = "1" ] && [ "$finish_reason" != "stop" ]; then
+    echo "GHOST // proposal incomplete; nothing saved" >&2
+    echo "GHOST // finish reason: ${finish_reason:-unavailable}" >&2
+    exit 7
+fi
+
+if [ "${GHOST_SAVE_PROPOSAL:-0}" = "1" ]; then
+    proposal_id="$(ghost_proposal_save "$question" "$request_intent" "$answer")"
+    printf 'GHOST // PROPOSAL SAVED: %s (pending review)\n' "$proposal_id"
 fi
 
 ghost_history_append "user" "$question"

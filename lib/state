@@ -3,6 +3,7 @@
 GHOST_STATE_DIR="${GHOST_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/ghost}"
 GHOST_HISTORY_FILE="$GHOST_STATE_DIR/history.jsonl"
 GHOST_MEMORY_FILE="$GHOST_STATE_DIR/memories.jsonl"
+GHOST_PROPOSAL_FILE="$GHOST_STATE_DIR/proposal.json"
 GHOST_STATE_LOCK="$GHOST_STATE_DIR/state.lock"
 
 ghost_state_init() {
@@ -11,6 +12,27 @@ ghost_state_init() {
     chmod 700 "$GHOST_STATE_DIR"
     touch "$GHOST_HISTORY_FILE" "$GHOST_MEMORY_FILE" "$GHOST_STATE_LOCK"
     chmod 600 "$GHOST_HISTORY_FILE" "$GHOST_MEMORY_FILE" "$GHOST_STATE_LOCK"
+}
+
+ghost_proposal_save() {
+    local request="$1"
+    local intent="$2"
+    local plan="$3"
+    local proposal_id created_at temporary
+    proposal_id="$(date +%Y%m%d-%H%M%S)"
+    created_at="$(date --iso-8601=seconds)"
+    temporary="$(mktemp "$GHOST_STATE_DIR/.proposal.XXXXXX")"
+
+    jq -n --arg id "$proposal_id" --arg created_at "$created_at" \
+        --arg request "$request" --arg intent "$intent" --arg plan "$plan" \
+        '{id: $id, created_at: $created_at, status: "pending-review",
+          intent: $intent, request: $request, plan: $plan}' > "$temporary"
+    chmod 600 "$temporary"
+    {
+        flock -x 9
+        mv "$temporary" "$GHOST_PROPOSAL_FILE"
+    } 9> "$GHOST_STATE_LOCK"
+    printf '%s\n' "$proposal_id"
 }
 
 ghost_history_append() {

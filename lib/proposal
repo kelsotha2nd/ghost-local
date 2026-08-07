@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+
+SOURCE="${BASH_SOURCE[0]}"
+ROOT="$(cd -P "$(dirname "$SOURCE")/.." >/dev/null 2>&1 && pwd)"
+# shellcheck source=state
+source "$ROOT/lib/state"
+ghost_state_init
+
+if [ ! -s "$GHOST_PROPOSAL_FILE" ]; then
+    echo "GHOST // no active proposal"
+    exit 0
+fi
+
+jq -r '
+    "GHOST // ACTIVE PROPOSAL",
+    "  id:      \(.id)",
+    "  status:  \(.status)",
+    "  created: \(.created_at)",
+    "  intent:  \(.intent)",
+    "",
+    "REQUEST:",
+    .request,
+    "",
+    "PLAN:",
+    .plan
+' "$GHOST_PROPOSAL_FILE"

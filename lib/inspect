@@ -49,7 +49,14 @@ inspect_config() {
         "/home/${USER}/.config/nixos/modules/ghost.nix"
     )
 
-    echo "NIX CONFIGURATION SYNTAX:"
+    echo "NIX CONFIGURATION:"
+    echo "layout: classic module tree (no flake entry point observed)"
+    echo "activation: sudo nixos-rebuild switch -I nixos-config=/home/${USER}/.config/nixos/configuration.nix"
+    echo "validation commands:"
+    echo "  nix-instantiate --parse /home/${USER}/.config/nixos/configuration.nix"
+    echo "  nix-instantiate --parse /home/${USER}/.config/nixos/modules/ghost.nix"
+    echo
+    echo "SYNTAX RESULTS:"
     if ! command -v nix-instantiate >/dev/null 2>&1; then
         echo "nix-instantiate unavailable"
         return 0
@@ -85,7 +92,7 @@ if [ "${1:-}" = "--auto" ]; then
 
     [[ "$query" =~ (slow|performance|resource|load|memory[[:space:]]+pressure|cpu|disk[[:space:]]+pressure) ]] && targets+=(health processes)
     [[ "$query" =~ (service|daemon|systemd|ollama|failed[[:space:]]+unit) ]] && targets+=(services)
-    [[ "$query" =~ (nix[[:space:]]+config|configuration|module|rebuild|syntax) ]] && targets+=(config)
+    [[ "$query" =~ (nix[[:space:]]+config|configuration|module|rebuild|syntax|package|install|upgrade|update) ]] && targets+=(config)
 
     seen=" "
     for target in "${targets[@]}"; do

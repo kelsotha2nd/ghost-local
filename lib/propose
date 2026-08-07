@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+
+SOURCE="${BASH_SOURCE[0]}"
+ROOT="$(cd -P "$(dirname "$SOURCE")/.." >/dev/null 2>&1 && pwd)"
+# shellcheck source=voice-config
+source "$ROOT/lib/voice-config"
+
+request="$*"
+if [ -z "$request" ]; then
+    echo "usage: ghost propose <requested change>" >&2
+    exit 2
+fi
+
+IFS=$'\t' read -r _lane _reason intent < <("$ROOT/lib/route" "$request")
+if [[ "$intent" != *change ]]; then
+    echo "GHOST // proposal requires a machine-change request" >&2
+    echo "Use 'ghost ask' for questions or 'ghost inspect' for read-only checks." >&2
+    exit 2
+fi
+
+tool_context="$("$ROOT/lib/inspect" --auto "$request")"
+if [ -n "$tool_context" ]; then
+    export GHOST_TOOL_CONTEXT="$tool_context"
+fi
+
+export GHOST_MODEL_OVERRIDE="${GHOST_SMART_MODEL:-qwen3:8b}"
+export GHOST_MAX_TOKENS="${GHOST_PROPOSAL_MAX_TOKENS:-384}"
+export GHOST_HISTORY_MESSAGES="${GHOST_SMART_HISTORY_MESSAGES:-12}"
+export GHOST_CONTEXT_MODE="compact"
+export GHOST_REQUEST_INTENT="$intent"
+export GHOST_PROPOSAL_MODE=1
+export GHOST_SAVE_PROPOSAL=1
+export GHOST_API_TIMEOUT="${GHOST_PROPOSAL_TIMEOUT:-240}"
+
+exec "$ROOT/lib/ask" "$request"
