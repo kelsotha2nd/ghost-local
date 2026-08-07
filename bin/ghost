@@ -45,6 +45,9 @@ case "${1:-}" in
         shift
         exec "$ROOT/lib/voice" "$@"
         ;;
+    audio)
+        exec "$ROOT/lib/audio"
+        ;;
     help|-h|--help)
         cat <<'EOF'
 GHOST // COMMANDS
@@ -56,9 +59,10 @@ GHOST // COMMANDS
   ghost clear           clear conversation history
   ghost remember <fact> store a deliberate long-term memory
   ghost memories        show deliberate memories
-  ghost listen [seconds] record and transcribe one utterance
+  ghost listen [seconds] push-to-talk or timed transcription
   ghost speak <text>    speak text through the local voice
-  ghost voice [seconds] listen, answer, and speak
+  ghost voice [seconds] push-to-talk, answer, and speak
+  ghost audio           inspect audio devices and selection
   ghost help            show this message
 EOF
         exit 0

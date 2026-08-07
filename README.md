@@ -81,12 +81,17 @@ The NixOS runtime module provides Whisper.cpp, Piper, pinned speech models, and
 PipeWire tools. After activating that module:
 
 ```bash
+ghost listen
 ghost listen 6
 ghost speak "system nominal"
-ghost voice 6
+ghost voice
+ghost audio
 ```
 
-`ghost voice` records one bounded utterance, transcribes it locally, passes it
+With no duration, `ghost listen` and `ghost voice` record until ENTER is
+pressed. Supplying seconds retains bounded capture. `ghost voice` transcribes locally, passes it
 through the same context and conversation history as `ghost ask`, and speaks
 the answer locally. The initial Piper voice is a reference voice intended for
-testing; it is not GHOST's permanent voice identity.
+testing; it is not GHOST's permanent voice identity. A specific PipeWire input
+or output can be selected in ignored `config/voice.env` using the node names or
+IDs shown by `ghost audio`.

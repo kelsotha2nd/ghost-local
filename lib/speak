@@ -36,4 +36,8 @@ if ! piper --model "$GHOST_PIPER_MODEL" --config "$GHOST_PIPER_CONFIG" \
     exit 4
 fi
 
-pw-play "$audio_file"
+play_args=()
+if [ -n "${GHOST_AUDIO_SINK:-}" ]; then
+    play_args+=(--target "$GHOST_AUDIO_SINK")
+fi
+pw-play "${play_args[@]}" "$audio_file"

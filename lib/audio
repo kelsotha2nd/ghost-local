@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+
+SOURCE="${BASH_SOURCE[0]}"
+ROOT="$(cd -P "$(dirname "$SOURCE")/.." >/dev/null 2>&1 && pwd)"
+# shellcheck source=voice-config
+source "$ROOT/lib/voice-config"
+
+echo "GHOST // AUDIO"
+echo "  input target:  ${GHOST_AUDIO_SOURCE:-PipeWire default}"
+echo "  output target: ${GHOST_AUDIO_SINK:-PipeWire default}"
+echo
+
+if command -v wpctl >/dev/null 2>&1; then
+    wpctl status
+else
+    echo "GHOST // missing audio dependency: wpctl" >&2
+    exit 3
+fi

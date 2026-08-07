@@ -11,14 +11,27 @@ if [ -z "$audio_file" ] || [ ! -r "$audio_file" ]; then
     exit 2
 fi
 
-if ! command -v whisper-cli >/dev/null 2>&1; then
-    echo "GHOST // missing voice dependency: whisper-cli" >&2
-    exit 3
-fi
+for dependency in ffmpeg whisper-cli; do
+    if ! command -v "$dependency" >/dev/null 2>&1; then
+        echo "GHOST // missing voice dependency: $dependency" >&2
+        exit 3
+    fi
+done
 
 if [ -z "${GHOST_WHISPER_MODEL:-}" ] || [ ! -r "$GHOST_WHISPER_MODEL" ]; then
     echo "GHOST // Whisper model not configured" >&2
     exit 3
+fi
+
+peak_volume="$(ffmpeg -hide_banner -nostats -i "$audio_file" \
+    -af volumedetect -f null - 2>&1 |
+    awk '/max_volume:/ {print $(NF - 1); exit}')"
+minimum_peak="${GHOST_AUDIO_MIN_PEAK_DB:--45}"
+if [ -z "$peak_volume" ] || [ "$peak_volume" = "-inf" ] ||
+   awk -v peak="$peak_volume" -v minimum="$minimum_peak" \
+       'BEGIN {exit !(peak < minimum)}'; then
+    echo "GHOST // no speech detected" >&2
+    exit 4
 fi
 
 transcript="$(whisper-cli \
@@ -26,12 +39,15 @@ transcript="$(whisper-cli \
     --file "$audio_file" \
     --threads "${GHOST_WHISPER_THREADS:-4}" \
     --language "${GHOST_WHISPER_LANGUAGE:-en}" \
-    --no-timestamps --no-prints 2>/dev/null)"
+    --prompt "${GHOST_WHISPER_PROMPT:-GHOST, NixOS, Niri, Quickshell, PipeWire, Ollama.}" \
+    --no-speech-thold "${GHOST_WHISPER_NO_SPEECH_THRESHOLD:-0.50}" \
+    --suppress-nst --no-timestamps --no-prints 2>/dev/null)"
 
 transcript="$(sed -e '/^[[:space:]]*$/d' \
     -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' <<< "$transcript" |
     paste -sd ' ' -)"
-if [ -z "$transcript" ] || [ "$transcript" = "[BLANK_AUDIO]" ]; then
+normalized="${transcript,,}"
+if [ -z "$transcript" ] || [[ "$normalized" =~ ^\[(blank_audio|silence|music|noise)\][.!]?$ ]]; then
     echo "GHOST // no speech detected" >&2
     exit 4
 fi

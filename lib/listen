@@ -5,8 +5,8 @@ ROOT="$(cd -P "$(dirname "$SOURCE")/.." >/dev/null 2>&1 && pwd)"
 # shellcheck source=voice-config
 source "$ROOT/lib/voice-config"
 
-duration="${1:-${GHOST_RECORD_SECONDS:-6}}"
-if [[ ! "$duration" =~ ^[1-9][0-9]*$ ]]; then
+duration="${1:-}"
+if [ -n "$duration" ] && [[ ! "$duration" =~ ^[1-9][0-9]*$ ]]; then
     echo "GHOST // recording duration must be a positive integer" >&2
     exit 2
 fi
@@ -18,13 +18,45 @@ fi
 
 audio_file="$(mktemp --suffix=.wav)"
 record_log="$(mktemp)"
-trap 'rm -f "$audio_file" "$record_log"' EXIT INT TERM
+record_pid=""
+cleanup() {
+    if [ -n "$record_pid" ] && kill -0 "$record_pid" 2>/dev/null; then
+        kill -INT "$record_pid" 2>/dev/null || true
+        wait "$record_pid" 2>/dev/null || true
+    fi
+    rm -f "$audio_file" "$record_log"
+}
+trap cleanup EXIT
+trap 'exit 130' INT TERM
 
-echo "GHOST // LISTENING (${duration}s)" >&2
-pw-record --rate 16000 --channels 1 --format s16 \
-    --sample-count "$((duration * 16000))" "$audio_file" \
-    >"$record_log" 2>&1
-record_status=$?
+record_args=(--rate 16000 --channels 1 --format s16)
+if [ -n "${GHOST_AUDIO_SOURCE:-}" ]; then
+    record_args+=(--target "$GHOST_AUDIO_SOURCE")
+fi
+
+if [ -n "$duration" ]; then
+    echo "GHOST // LISTENING (${duration}s)" >&2
+    pw-record "${record_args[@]}" \
+        --sample-count "$((duration * 16000))" "$audio_file" \
+        >"$record_log" 2>&1
+    record_status=$?
+elif [ -t 0 ]; then
+    echo "GHOST // LISTENING — press ENTER to stop" >&2
+    pw-record "${record_args[@]}" "$audio_file" >"$record_log" 2>&1 &
+    record_pid=$!
+    read -r _
+    kill -INT "$record_pid" 2>/dev/null || true
+    wait "$record_pid"
+    record_status=$?
+    record_pid=""
+else
+    duration="${GHOST_RECORD_SECONDS:-6}"
+    echo "GHOST // LISTENING (${duration}s)" >&2
+    pw-record "${record_args[@]}" \
+        --sample-count "$((duration * 16000))" "$audio_file" \
+        >"$record_log" 2>&1
+    record_status=$?
+fi
 record_bytes="$(wc -c < "$audio_file" 2>/dev/null || echo 0)"
 
 # PipeWire may return a non-zero status when a bounded sample count closes the
