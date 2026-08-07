@@ -10,9 +10,12 @@ source "$ROOT/lib/state"
 if [ "${1:-}" = "activation" ] && [ -z "${2:-}" ]; then
     exec "$ROOT/lib/authorize-activation"
 fi
+if [ "${1:-}" = "rollback" ] && [ -z "${2:-}" ]; then
+    exec "$ROOT/lib/authorize-rollback"
+fi
 
 if [ "${1:-}" != "execution" ] || [ -z "${2:-}" ] || [ -n "${3:-}" ]; then
-    echo "usage: ghost authorize <execution proposal-id|activation>" >&2
+    echo "usage: ghost authorize <execution proposal-id|activation|rollback>" >&2
     exit 2
 fi
 proposal_id="$2"

@@ -6,6 +6,23 @@ transcript="$*"
 command="${transcript,,}"
 command="${command%[.!?]}"
 
+if [[ "$command" =~ ^(ghost[,[:space:]]+)?prepare[[:space:]]+system[[:space:]]+rollback$ ]]; then
+    "$ROOT/lib/rollback-challenge" || exit $?
+    if [ "${GHOST_VOICE_COMMAND_SPEAK:-0}" = "1" ]; then
+        "$ROOT/lib/speak" "Rollback is prepared. Nothing has changed. To restore the trusted configuration and previous generation, say authorize system rollback." || true
+    fi
+    exit 0
+fi
+
+if [[ "$command" =~ ^(ghost[,[:space:]]+)?authorize[[:space:]]+system[[:space:]]+rollback$ ]]; then
+    GHOST_AUTHORIZE_ROLLBACK="${GHOST_VOICE_COMMAND_ROLLBACK:-1}" \
+        "$ROOT/lib/authorize-rollback" || exit $?
+    if [ "${GHOST_VOICE_COMMAND_SPEAK:-0}" = "1" ]; then
+        "$ROOT/lib/speak" "The trusted configuration and previous NixOS generation are restored." || true
+    fi
+    exit 0
+fi
+
 if [[ "$command" =~ ^(ghost[,[:space:]]+)?authorize[[:space:]]+system[[:space:]]+activation$ ]]; then
     GHOST_AUTHORIZE_ACTIVATE="${GHOST_VOICE_COMMAND_ACTIVATE:-1}" \
         "$ROOT/lib/authorize-activation" || exit $?

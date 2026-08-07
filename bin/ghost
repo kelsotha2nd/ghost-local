@@ -76,6 +76,8 @@ case "${1:-}" in
         shift
         if [ "${1:-}" = "activation" ]; then
             export GHOST_AUTHORIZE_ACTIVATE=1
+        elif [ "${1:-}" = "rollback" ]; then
+            export GHOST_AUTHORIZE_ROLLBACK=1
         else
             export GHOST_AUTHORIZE_EXECUTE=1
         fi
@@ -96,6 +98,10 @@ case "${1:-}" in
     activate)
         shift
         exec "$ROOT/lib/activate" "$@"
+        ;;
+    rollback)
+        shift
+        exec "$ROOT/lib/rollback-challenge" "$@"
         ;;
     audio)
         exec "$ROOT/lib/audio"
@@ -131,6 +137,8 @@ GHOST // COMMANDS
   ghost activation [id] issue a system activation challenge
   ghost authorize activation authorize and run a challenged activation
   ghost activate <id>   run an already-authorized activation
+  ghost rollback        challenge rollback of the latest activation
+  ghost authorize rollback authorize and run a challenged rollback
   ghost audio           inspect audio devices and selection
   ghost benchmark [model] measure local model throughput
   ghost help            show this message

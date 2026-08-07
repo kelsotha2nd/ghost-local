@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+
+set -o pipefail
+SOURCE="${BASH_SOURCE[0]}"
+ROOT="$(cd -P "$(dirname "$SOURCE")/.." >/dev/null 2>&1 && pwd)"
+# shellcheck source=state
+source "$ROOT/lib/state"
+ghost_state_init
+[ -s "$GHOST_PROPOSAL_FILE" ] && [ -s "$GHOST_ROLLBACK_CHALLENGE_FILE" ] || { echo "GHOST // rollback challenge unavailable" >&2; exit 4; }
+
+{
+    flock -x 9
+    proposal_id="$(jq -r '.id // empty' "$GHOST_PROPOSAL_FILE")"
+    status="$(jq -r '.status // empty' "$GHOST_PROPOSAL_FILE")"
+    digest="$(jq -r '.digest // empty' "$GHOST_PROPOSAL_FILE")"
+    challenge_id="$(jq -r '.proposal_id // empty' "$GHOST_ROLLBACK_CHALLENGE_FILE")"
+    challenge_digest="$(jq -r '.digest // empty' "$GHOST_ROLLBACK_CHALLENGE_FILE")"
+    expiry="$(jq -r '.expires_epoch // 0' "$GHOST_ROLLBACK_CHALLENGE_FILE")"
+    consumed="$(jq -r 'if has("consumed") then .consumed else true end' "$GHOST_ROLLBACK_CHALLENGE_FILE")"
+    nonce="$(jq -r '.nonce // empty' "$GHOST_ROLLBACK_CHALLENGE_FILE")"
+    case "$status" in activated|fixture-activated) ;; *) echo "GHOST // proposal is not eligible for rollback" >&2; exit 6 ;; esac
+    [ "$proposal_id" = "$challenge_id" ] && [ "$digest" = "$challenge_digest" ] || { echo "GHOST // rollback challenge binding mismatch" >&2; exit 5; }
+    [ "$consumed" = false ] && [ -n "$nonce" ] || { echo "GHOST // rollback challenge already consumed" >&2; exit 7; }
+    [ "$(date +%s)" -lt "$expiry" ] || { echo "GHOST // rollback challenge expired" >&2; exit 8; }
+    authorized_at="$(date --iso-8601=seconds)"; nonce_sha256="$(printf %s "$nonce" | sha256sum | awk '{print $1}')"
+    temporary="$(mktemp "$GHOST_STATE_DIR/.proposal.XXXXXX")"
+    jq --arg authorized_at "$authorized_at" --arg nonce_sha256 "$nonce_sha256" --argjson expires_epoch "$expiry" \
+        '.status = "rollback-authorized" | .rollback_authorization = {authorized_at: $authorized_at, expires_epoch: $expires_epoch, nonce_sha256: $nonce_sha256}' \
+        "$GHOST_PROPOSAL_FILE" > "$temporary"
+    chmod 600 "$temporary"; mv "$temporary" "$GHOST_PROPOSAL_FILE"
+    temporary="$(mktemp "$GHOST_STATE_DIR/.rollback.XXXXXX")"
+    jq 'del(.nonce) | .consumed = true' "$GHOST_ROLLBACK_CHALLENGE_FILE" > "$temporary"
+    chmod 600 "$temporary"; mv "$temporary" "$GHOST_ROLLBACK_CHALLENGE_FILE"
+} 9> "$GHOST_STATE_LOCK"
+
+echo "GHOST // SYSTEM ROLLBACK AUTHORIZED"
+if [ "${GHOST_AUTHORIZE_ROLLBACK:-0}" = 1 ]; then exec "$ROOT/lib/rollback" "$proposal_id"; fi
+echo "  rollback: not run (authorization only)"

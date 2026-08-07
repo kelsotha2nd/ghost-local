@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+ROOT="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." >/dev/null 2>&1 && pwd)"
+temporary_root="$(mktemp -d /tmp/ghost-rollback-test.XXXXXX)"
+trap 'rm -r "$temporary_root"' EXIT
+export GHOST_STATE_DIR="$temporary_root/state"
+export GHOST_NIX_CONFIG_PATH="$temporary_root/configuration.nix"
+export GHOST_NIX_GHOST_MODULE_PATH="$temporary_root/ghost.nix"
+printf '%s\n' '{ pkgs, ... }:' '{' '  environment.systemPackages = with pkgs; [' '    curl' '  ];' '}' > "$GHOST_NIX_CONFIG_PATH"
+printf '%s\n' '{ ... }: { }' > "$GHOST_NIX_GHOST_MODULE_PATH"
+# shellcheck source=../lib/state
+source "$ROOT/lib/state"; ghost_state_init
+
+proposal_id="$(ghost_proposal_save 'add htop to configuration.nix' change 'Scope. Steps. Risk. Validation. Rollback. Pending review.')"
+original_sha="$(sha256sum "$GHOST_NIX_CONFIG_PATH" | awk '{print $1}')"
+"$ROOT/lib/approve" "$proposal_id" >/dev/null
+"$ROOT/lib/challenge" "$proposal_id" >/dev/null
+"$ROOT/lib/authorize" execution "$proposal_id" >/dev/null
+GHOST_EXECUTOR_TEST_MODE=1 "$ROOT/lib/execute" "$proposal_id" >/dev/null
+edited_sha="$(sha256sum "$GHOST_NIX_CONFIG_PATH" | awk '{print $1}')"
+[ "$edited_sha" != "$original_sha" ]
+GHOST_VERIFY_TEST_MODE=1 GHOST_SKIP_FULL_EVALUATION=1 GHOST_PREPARE_ACTIVATION=1 "$ROOT/lib/verify" "$proposal_id" >/dev/null
+GHOST_ACTIVATOR_TEST_MODE=1 GHOST_TEST_GENERATION_BEFORE=100 GHOST_AUTHORIZE_ACTIVATE=1 "$ROOT/lib/authorize-activation" >/dev/null
+
+set +e
+"$ROOT/lib/voice-command" 'yes roll it back' >/dev/null 2>&1
+casual_status=$?
+set -e
+[ "$casual_status" -eq 64 ]
+prepare_output="$("$ROOT/lib/voice-command" 'prepare system rollback.')"
+[[ "$prepare_output" == *'nothing changed'* ]]
+[ "$(sha256sum "$GHOST_NIX_CONFIG_PATH" | awk '{print $1}')" = "$edited_sha" ]
+rollback_output="$(GHOST_ROLLBACK_TEST_MODE=1 GHOST_TEST_CURRENT_GENERATION=101 "$ROOT/lib/voice-command" 'authorize system rollback.')"
+[[ "$rollback_output" == *'SYSTEM ROLLBACK COMPLETE'* ]]
+[ "$(jq -r '.status' "$GHOST_PROPOSAL_FILE")" = fixture-rolled-back ]
+[ "$(jq -r '.rollback.generation_after' "$GHOST_PROPOSAL_FILE")" = 100 ]
+[ "$(sha256sum "$GHOST_NIX_CONFIG_PATH" | awk '{print $1}')" = "$original_sha" ]
+
+echo "rollback tests passed"

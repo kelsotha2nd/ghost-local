@@ -238,3 +238,19 @@ pre-switch generation and reports the explicit NixOS rollback command.
 
 Fixture activation is confined to `/tmp`; the test suite exercises successful
 and failed activation without invoking sudo or changing the live system.
+
+The latest successful activation can be recovered without remembering proposal
+IDs or Nix commands:
+
+```text
+prepare system rollback
+authorize system rollback
+```
+
+Preparation is read-only. It binds a two-minute challenge to the latest
+activated proposal, the recorded before/after generations, the unchanged edited
+configuration, and the trusted pre-edit backup. Exact authorization restores
+that backup byte-for-byte with its original mode, then runs the fixed NixOS
+rollback command through normal sudo authentication. Success requires the
+recorded previous generation and active system profile to agree. Casual
+confirmation is ignored, and fixture rollback is restricted to `/tmp`.
