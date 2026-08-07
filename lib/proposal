@@ -11,10 +11,14 @@ if [ ! -s "$GHOST_PROPOSAL_FILE" ]; then
     exit 0
 fi
 
-jq -r '
+now_epoch="$(date +%s)"
+jq -r --argjson now "$now_epoch" '
+    def visible_status:
+        if .status == "approved" and (.approval.expires_epoch // 0) <= $now
+        then "expired" else .status end;
     "GHOST // ACTIVE PROPOSAL",
     "  id:      \(.id)",
-    "  status:  \(.status)",
+    "  status:  \(visible_status)",
     "  created: \(.created_at)",
     "  intent:  \(.intent)",
     "",
@@ -22,5 +26,9 @@ jq -r '
     .request,
     "",
     "PLAN:",
-    .plan
+    .plan,
+    (if .approval then "", "APPROVAL:",
+        "  approved: \(.approval.approved_at)",
+        "  expires:  \(.approval.expires_at)"
+     else empty end)
 ' "$GHOST_PROPOSAL_FILE"

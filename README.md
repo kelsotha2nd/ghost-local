@@ -157,3 +157,16 @@ containing unresolved placeholders, known speech artifacts, or unsupported
 validation commands are rejected rather than saved. Voice speaks only a short
 pending-review summary; the complete proposal remains visible in the terminal
 and through `ghost proposal`.
+
+Approval is a separate non-executing state transition. It requires the exact
+proposal ID, refuses protected changes, verifies that tracked Nix configuration
+files have not changed, and issues a random token bound to the proposal digest.
+Tokens expire after 15 minutes by default, and only their SHA-256 hashes are
+stored in the private proposal state and append-only approval audit:
+
+```bash
+ghost proposal
+ghost approve <proposal-id>
+```
+
+Approval never runs a command or edits a file.

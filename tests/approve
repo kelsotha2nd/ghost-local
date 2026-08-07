@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+ROOT="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." >/dev/null 2>&1 && pwd)"
+temporary_state="$(mktemp -d)"
+trap 'rm -r "$temporary_state"' EXIT
+export GHOST_STATE_DIR="$temporary_state/state"
+export GHOST_NIX_CONFIG_PATH="$temporary_state/configuration.nix"
+export GHOST_NIX_GHOST_MODULE_PATH="$temporary_state/ghost.nix"
+
+printf '%s\n' '{ pkgs, ... }: { environment.systemPackages = [ ]; }' \
+    > "$GHOST_NIX_CONFIG_PATH"
+printf '%s\n' '{ ... }: { }' > "$GHOST_NIX_GHOST_MODULE_PATH"
+
+# shellcheck source=../lib/state
+source "$ROOT/lib/state"
+ghost_state_init
+
+proposal_id="$(ghost_proposal_save \
+    "add test package" "change" \
+    "Scope. Steps. Risk. Validation. Rollback. Pending review.")"
+approval_output="$(GHOST_APPROVAL_TTL_SECONDS=900 "$ROOT/lib/approve" "$proposal_id")"
+[[ "$approval_output" == *"execution remains locked"* ]]
+token="$(sed -n 's/^  token:   //p' <<< "$approval_output")"
+[[ "$token" =~ ^[0-9a-f]{32}$ ]]
+[ "$(jq -r '.status' "$GHOST_PROPOSAL_FILE")" = "approved" ]
+[ "$(jq -r '.approval.token_sha256' "$GHOST_PROPOSAL_FILE")" != "$token" ]
+[ "$(wc -l < "$GHOST_APPROVAL_AUDIT_FILE")" -eq 1 ]
+expired_file="$temporary_state/expired-proposal"
+jq '.approval.expires_epoch = 0' "$GHOST_PROPOSAL_FILE" > "$expired_file"
+mv "$expired_file" "$GHOST_PROPOSAL_FILE"
+[[ "$("$ROOT/lib/proposal")" == *"status:  expired"* ]]
+
+stale_id="$(ghost_proposal_save \
+    "change test config" "change" \
+    "Scope. Steps. Risk. Validation. Rollback. Pending review.")"
+printf '%s\n' '# changed after proposal' >> "$GHOST_NIX_CONFIG_PATH"
+set +e
+"$ROOT/lib/approve" "$stale_id" >/dev/null 2>&1
+stale_status=$?
+set -e
+[ "$stale_status" -eq 9 ]
+
+protected_id="$(ghost_proposal_save \
+    "wipe test machine" "protected-change" \
+    "Scope. Steps. Risk. Validation. Rollback. Pending review.")"
+set +e
+"$ROOT/lib/approve" "$protected_id" >/dev/null 2>&1
+protected_status=$?
+set -e
+[ "$protected_status" -eq 6 ]
+
+tampered_id="$(ghost_proposal_save \
+    "change test package" "change" \
+    "Scope. Steps. Risk. Validation. Rollback. Pending review.")"
+tampered_file="$temporary_state/tampered-proposal"
+jq '.plan = "tampered after creation"' "$GHOST_PROPOSAL_FILE" > "$tampered_file"
+mv "$tampered_file" "$GHOST_PROPOSAL_FILE"
+set +e
+"$ROOT/lib/approve" "$tampered_id" >/dev/null 2>&1
+tampered_status=$?
+set -e
+[ "$tampered_status" -eq 10 ]
+
+echo "approval tests passed"

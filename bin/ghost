@@ -60,6 +60,10 @@ case "${1:-}" in
     proposal)
         exec "$ROOT/lib/proposal"
         ;;
+    approve)
+        shift
+        exec "$ROOT/lib/approve" "$@"
+        ;;
     audio)
         exec "$ROOT/lib/audio"
         ;;
@@ -85,6 +89,7 @@ GHOST // COMMANDS
   ghost inspect <target> run a whitelisted read-only inspection
   ghost propose <change> create and save a change proposal
   ghost proposal        review the active proposal
+  ghost approve <id>    approve a proposal without executing it
   ghost audio           inspect audio devices and selection
   ghost benchmark [model] measure local model throughput
   ghost help            show this message

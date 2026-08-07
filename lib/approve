@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+
+set -o pipefail
+
+SOURCE="${BASH_SOURCE[0]}"
+ROOT="$(cd -P "$(dirname "$SOURCE")/.." >/dev/null 2>&1 && pwd)"
+# shellcheck source=state
+source "$ROOT/lib/state"
+
+proposal_id="${1:-}"
+if [ -z "$proposal_id" ]; then
+    echo "usage: ghost approve <proposal-id>" >&2
+    exit 2
+fi
+
+for dependency in jq flock sha256sum od; do
+    if ! command -v "$dependency" >/dev/null 2>&1; then
+        echo "GHOST // missing dependency: $dependency" >&2
+        exit 3
+    fi
+done
+
+ghost_state_init
+if [ ! -s "$GHOST_PROPOSAL_FILE" ]; then
+    echo "GHOST // no active proposal" >&2
+    exit 4
+fi
+
+{
+    flock -x 9
+
+    stored_id="$(jq -r '.id // empty' "$GHOST_PROPOSAL_FILE")"
+    status="$(jq -r '.status // empty' "$GHOST_PROPOSAL_FILE")"
+    intent="$(jq -r '.intent // empty' "$GHOST_PROPOSAL_FILE")"
+    digest="$(jq -r '.digest // empty' "$GHOST_PROPOSAL_FILE")"
+    request="$(jq -r '.request // empty' "$GHOST_PROPOSAL_FILE")"
+    plan="$(jq -r '.plan // empty' "$GHOST_PROPOSAL_FILE")"
+
+    if [ "$proposal_id" != "$stored_id" ]; then
+        echo "GHOST // proposal ID mismatch; approval refused" >&2
+        exit 5
+    fi
+    if [ "$intent" = "protected-change" ]; then
+        echo "GHOST // protected changes cannot be approved" >&2
+        exit 6
+    fi
+    if [ "$status" != "pending-review" ]; then
+        echo "GHOST // proposal is not pending review: $status" >&2
+        exit 7
+    fi
+    if [ -z "$digest" ] || [ "$(jq -r '.machine_fingerprint // empty' "$GHOST_PROPOSAL_FILE")" = "" ]; then
+        echo "GHOST // proposal predates approval fingerprints; regenerate it" >&2
+        exit 8
+    fi
+    computed_digest="$(printf '%s\0%s\0%s' "$request" "$intent" "$plan" | sha256sum | awk '{print $1}')"
+    if [ "$computed_digest" != "$digest" ]; then
+        echo "GHOST // proposal digest mismatch; approval refused" >&2
+        exit 10
+    fi
+
+    current_fingerprint="$(ghost_machine_fingerprint)"
+    stored_fingerprint="$(jq -c '.machine_fingerprint' "$GHOST_PROPOSAL_FILE")"
+    if [ "$current_fingerprint" != "$stored_fingerprint" ]; then
+        echo "GHOST // machine configuration changed since proposal creation" >&2
+        echo "GHOST // approval refused; regenerate the proposal" >&2
+        exit 9
+    fi
+
+    now_epoch="$(date +%s)"
+    ttl="${GHOST_APPROVAL_TTL_SECONDS:-900}"
+    if [[ ! "$ttl" =~ ^[1-9][0-9]*$ ]]; then
+        echo "GHOST // invalid approval TTL" >&2
+        exit 3
+    fi
+    expires_epoch="$((now_epoch + ttl))"
+    approved_at="$(date --iso-8601=seconds)"
+    expires_at="$(date --date="@${expires_epoch}" --iso-8601=seconds)"
+    token="$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
+    token_sha256="$(printf '%s' "$token" | sha256sum | awk '{print $1}')"
+    temporary="$(mktemp "$GHOST_STATE_DIR/.proposal.XXXXXX")"
+
+    jq --arg approved_at "$approved_at" --arg expires_at "$expires_at" \
+        --argjson expires_epoch "$expires_epoch" --arg token_sha256 "$token_sha256" \
+        '.status = "approved" |
+         .approval = {approved_at: $approved_at, expires_at: $expires_at,
+                      expires_epoch: $expires_epoch, token_sha256: $token_sha256}' \
+        "$GHOST_PROPOSAL_FILE" > "$temporary"
+    chmod 600 "$temporary"
+    mv "$temporary" "$GHOST_PROPOSAL_FILE"
+
+    jq -cn --arg event "approved" --arg proposal_id "$stored_id" \
+        --arg digest "$digest" --arg approved_at "$approved_at" \
+        --arg expires_at "$expires_at" --arg token_sha256 "$token_sha256" \
+        '{event: $event, proposal_id: $proposal_id, digest: $digest,
+          approved_at: $approved_at, expires_at: $expires_at,
+          token_sha256: $token_sha256}' >> "$GHOST_APPROVAL_AUDIT_FILE"
+} 9> "$GHOST_STATE_LOCK"
+
+echo "GHOST // PROPOSAL APPROVED — execution remains locked"
+echo "  id:      $proposal_id"
+echo "  expires: $expires_at"
+echo "  token:   $token"
+echo
+echo "Store this token temporarily. Approval alone executes nothing."
