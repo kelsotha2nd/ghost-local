@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+
+proposal_file="${1:-}"
+request="${2:-}"
+if [ -z "$proposal_file" ] || [ ! -s "$proposal_file" ]; then
+    echo "proposal content unavailable" >&2
+    exit 2
+fi
+
+proposal="$(<"$proposal_file")"
+lower="${proposal,,}"
+
+for section in scope step risk validation rollback; do
+    if [[ "$lower" != *"$section"* ]]; then
+        echo "missing required proposal section: $section" >&2
+        exit 1
+    fi
+done
+
+if [[ ! "$lower" =~ pending[[:space:]-]+review ]]; then
+    echo "missing required proposal section: pending review" >&2
+    exit 1
+fi
+
+if [[ "$lower" =~ \<(file|path|package|command|target)\> ]]; then
+    echo "proposal contains an unresolved placeholder" >&2
+    exit 1
+fi
+
+if [[ "$lower" =~ configuration\.(next|nicks) ]] || [[ "$lower" =~ \<h[[:space:]-]+top\> ]]; then
+    echo "proposal contains an unnormalized speech artifact" >&2
+    exit 1
+fi
+
+if [[ "$lower" =~ nix[[:space:]]+flake[[:space:]]+check ]] || [[ "$lower" =~ nix[[:space:]]+validate ]]; then
+    echo "proposal contains an unsupported validation command" >&2
+    exit 1
+fi
+
+config_path="${HOME}/.config/nixos/configuration.nix"
+if [[ "$lower" == *"configuration.nix"* ]] && [[ "$proposal" != *"$config_path"* ]]; then
+    echo "proposal does not name the exact configuration path" >&2
+    exit 1
+fi
+
+if [[ "$lower" == *"nix-instantiate --parse"* ]] && \
+    [[ "$proposal" != *"nix-instantiate --parse ${config_path}"* ]]; then
+    echo "proposal contains an incomplete syntax validation command" >&2
+    exit 1
+fi
+
+activation="sudo nixos-rebuild switch -I nixos-config=${config_path}"
+if [[ "$lower" == *"nixos-rebuild switch"* ]] && [[ "$proposal" != *"$activation"* ]]; then
+    echo "proposal contains an incomplete activation command" >&2
+    exit 1
+fi
+
+request_lower="${request,,}"
+if [[ "$request_lower" =~ (add|install)[[:space:]]+(the[[:space:]]+)?([a-z0-9][a-z0-9+._-]*) ]]; then
+    package="${BASH_REMATCH[3]}"
+    if [[ "$proposal" != *"pkgs.${package}"* ]] && \
+        ! { [[ "$lower" == *"with pkgs;"* ]] && \
+            [[ "$lower" =~ (^|[[:space:]])${package}([[:space:]]|$) ]]; }; then
+        echo "proposal does not use the verified package attribute: pkgs.${package}" >&2
+        exit 1
+    fi
+fi
+
+exit 0

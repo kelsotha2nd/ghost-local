@@ -23,4 +23,38 @@ proposal_output="$("$ROOT/lib/proposal")"
 [[ "$proposal_output" == *"GHOST // ACTIVE PROPOSAL"* ]]
 [[ "$proposal_output" == *"update the test configuration"* ]]
 
+valid_plan="$temporary_state/valid-plan"
+printf '%s\n' \
+    "Scope: test. Steps: inspect then change. Risk: low." \
+    "Validation: parse exact target. Rollback: revert. Pending review." \
+    > "$valid_plan"
+"$ROOT/lib/validate-proposal" "$valid_plan"
+
+invalid_plan="$temporary_state/invalid-plan"
+printf '%s\n' \
+    "Scope: test. Steps: change <file>. Risk: low." \
+    "Validation: nix validate. Rollback: revert. Pending review." \
+    > "$invalid_plan"
+set +e
+"$ROOT/lib/validate-proposal" "$invalid_plan" >/dev/null 2>&1
+invalid_status=$?
+set -e
+[[ "$invalid_status" -eq 1 ]]
+
+package_plan="$temporary_state/package-plan"
+printf '%s\n' \
+    "Scope: add pkgs.htop. Steps: edit $HOME/.config/nixos/configuration.nix." \
+    "Risk: low. Validation: nix-instantiate --parse $HOME/.config/nixos/configuration.nix." \
+    "Activation: sudo nixos-rebuild switch -I nixos-config=$HOME/.config/nixos/configuration.nix." \
+    "Rollback: revert. Pending review." > "$package_plan"
+"$ROOT/lib/validate-proposal" "$package_plan" "add htop to configuration.nix"
+
+with_plan="$temporary_state/with-plan"
+printf '%s\n' \
+    "Scope: add htop. Steps: edit $HOME/.config/nixos/configuration.nix with pkgs; [ htop ]." \
+    "Risk: low. Validation: nix-instantiate --parse $HOME/.config/nixos/configuration.nix." \
+    "Activation: sudo nixos-rebuild switch -I nixos-config=$HOME/.config/nixos/configuration.nix." \
+    "Rollback: revert. Pending review." > "$with_plan"
+"$ROOT/lib/validate-proposal" "$with_plan" "add htop to configuration.nix"
+
 echo "proposal tests passed"

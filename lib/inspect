@@ -75,6 +75,19 @@ inspect_config() {
     return "$result"
 }
 
+inspect_package() {
+    local package="$1"
+    echo "NIX PACKAGE LOOKUP:"
+    if ! command -v nix-instantiate >/dev/null 2>&1; then
+        echo "package ${package}: lookup unavailable"
+    elif [ "$(nix-instantiate --eval --expr \
+        "builtins.hasAttr \"${package}\" (import <nixpkgs> {})" 2>/dev/null)" = "true" ]; then
+        echo "package ${package}: available as pkgs.${package}"
+    else
+        echo "package ${package}: not verified as a top-level nixpkgs attribute"
+    fi
+}
+
 run_target() {
     case "$1" in
         health) inspect_health ;;
@@ -102,6 +115,13 @@ if [ "${1:-}" = "--auto" ]; then
         run_target "$target" || true
         echo
     done
+
+    if [[ "$query" =~ (add|install)[[:space:]]+(the[[:space:]]+)?([a-z0-9][a-z0-9+._-]*) ]]; then
+        package="${BASH_REMATCH[3]}"
+        printf '%s\n' "--- PACKAGE ---"
+        inspect_package "$package"
+        echo
+    fi
     exit 0
 fi
 

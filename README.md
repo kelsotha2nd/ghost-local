@@ -148,3 +148,12 @@ ghost proposal
 
 Voice change requests use the same proposal path automatically. Saving a
 proposal does not approve or execute it.
+
+Before routing, voice normalizes a small audited vocabulary of common local
+speech errors, including `h-top` to `htop` and `configuration.next` to
+`configuration.nix`, and prints any correction. Package additions receive a
+read-only nixpkgs availability check. Proposals missing required safety sections,
+containing unresolved placeholders, known speech artifacts, or unsupported
+validation commands are rejected rather than saved. Voice speaks only a short
+pending-review summary; the complete proposal remains visible in the terminal
+and through `ghost proposal`.

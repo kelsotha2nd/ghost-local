@@ -120,7 +120,8 @@ invent a flake workflow, validator, service, package, or file location. If
 required information is missing, make inspection the first step. Use exact
 targets in commands, never placeholders such as <file>. Keep the plan concise
 but complete and under 250 words. End by stating that it is pending review, not
-approved."
+approved. When tool results provide validation commands, activation commands,
+paths, or package attributes, copy those exact values verbatim into the plan."
 fi
 
 if [ "${GHOST_SPEAK_RESPONSE:-0}" = "1" ]; then
@@ -200,6 +201,11 @@ if [ "${GHOST_SAVE_PROPOSAL:-0}" = "1" ] && [ "$finish_reason" != "stop" ]; then
 fi
 
 if [ "${GHOST_SAVE_PROPOSAL:-0}" = "1" ]; then
+    validation_error="$("$ROOT/lib/validate-proposal" "$answer_file" "$question" 2>&1)" || {
+        echo "GHOST // proposal rejected; nothing saved" >&2
+        echo "GHOST // $validation_error" >&2
+        exit 8
+    }
     proposal_id="$(ghost_proposal_save "$question" "$request_intent" "$answer")"
     printf 'GHOST // PROPOSAL SAVED: %s (pending review)\n' "$proposal_id"
 fi
@@ -212,5 +218,9 @@ if [ "${GHOST_SHOW_TIMING:-0}" = "1" ]; then
 fi
 
 if [ "${GHOST_SPEAK_RESPONSE:-0}" = "1" ]; then
-    "$ROOT/lib/speak" "$answer" || echo "GHOST // spoken output failed" >&2
+    spoken_answer="$answer"
+    if [ "${GHOST_PROPOSAL_MODE:-0}" = "1" ]; then
+        spoken_answer="I've prepared and saved a change proposal. It is pending review, and nothing has been changed. Run ghost proposal to inspect the full plan."
+    fi
+    "$ROOT/lib/speak" "$spoken_answer" || echo "GHOST // spoken output failed" >&2
 fi

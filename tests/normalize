@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+ROOT="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." >/dev/null 2>&1 && pwd)"
+
+[ "$("$ROOT/lib/normalize" "add h-top to configuration.next")" = \
+    "add htop to configuration.nix" ]
+[ "$("$ROOT/lib/normalize" "check nix o s status")" = \
+    "check NixOS status" ]
+[ "$("$ROOT/lib/normalize" "ordinary conversation")" = \
+    "ordinary conversation" ]
+
+echo "normalization tests passed"

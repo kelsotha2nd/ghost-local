@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+
+text="$*"
+
+printf '%s\n' "$text" | sed -E \
+    -e 's/\<h[ -]+top\>/htop/Ig' \
+    -e 's/\<configuration([[:space:]]+dot|[[:space:]]*\.)[[:space:]]*(next|nicks)\>/configuration.nix/Ig' \
+    -e 's/\<nix[ -]+o[ -]*s\>/NixOS/Ig'
