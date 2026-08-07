@@ -116,8 +116,8 @@ if [ "${1:-}" = "--auto" ]; then
         echo
     done
 
-    if [[ "$query" =~ (add|install)[[:space:]]+(the[[:space:]]+)?([a-z0-9][a-z0-9+._-]*) ]]; then
-        package="${BASH_REMATCH[3]}"
+    if [[ "$query" =~ (add|install)[[:space:]]+(the[[:space:]]+)?(package[[:space:]]+)?([a-z0-9][a-z0-9+._-]*) ]]; then
+        package="${BASH_REMATCH[4]}"
         printf '%s\n' "--- PACKAGE ---"
         inspect_package "$package"
         echo

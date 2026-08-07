@@ -56,8 +56,8 @@ if [[ "$lower" == *"nixos-rebuild switch"* ]] && [[ "$proposal" != *"$activation
 fi
 
 request_lower="${request,,}"
-if [[ "$request_lower" =~ (add|install)[[:space:]]+(the[[:space:]]+)?([a-z0-9][a-z0-9+._-]*) ]]; then
-    package="${BASH_REMATCH[3]}"
+if [[ "$request_lower" =~ (add|install)[[:space:]]+(the[[:space:]]+)?(package[[:space:]]+)?([a-z0-9][a-z0-9+._-]*) ]]; then
+    package="${BASH_REMATCH[4]}"
     if [[ "$proposal" != *"pkgs.${package}"* ]] && \
         ! { [[ "$lower" == *"with pkgs;"* ]] && \
             [[ "$lower" =~ (^|[[:space:]])${package}([[:space:]]|$) ]]; }; then

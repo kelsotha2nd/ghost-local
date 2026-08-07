@@ -17,9 +17,10 @@ fi
 
 if [[ "$command" =~ ^(ghost[,[:space:]]+)?authorize[[:space:]]+execution[[:space:]]+([0-9-]+)$ ]]; then
     proposal_id="${BASH_REMATCH[2]}"
-    "$ROOT/lib/authorize" execution "$proposal_id" || exit $?
+    GHOST_AUTHORIZE_EXECUTE="${GHOST_VOICE_COMMAND_EXECUTE:-1}" \
+        "$ROOT/lib/authorize" execution "$proposal_id" || exit $?
     if [ "${GHOST_VOICE_COMMAND_SPEAK:-0}" = "1" ]; then
-        "$ROOT/lib/speak" "Execution authorized for proposal ${proposal_id}. The executor remains locked, and nothing has run." || true
+        "$ROOT/lib/speak" "Execution completed for proposal ${proposal_id}. The configuration edit was backed up and validated. System activation has not run." || true
     fi
     exit 0
 fi

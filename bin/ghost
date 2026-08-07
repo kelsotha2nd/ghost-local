@@ -70,6 +70,7 @@ case "${1:-}" in
         ;;
     authorize)
         shift
+        export GHOST_AUTHORIZE_EXECUTE=1
         exec "$ROOT/lib/authorize" "$@"
         ;;
     shadow)

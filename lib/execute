@@ -13,19 +13,24 @@ if [ -z "$proposal_id" ]; then
     exit 2
 fi
 
-if [ "${GHOST_EXECUTOR_TEST_MODE:-0}" != "1" ]; then
-    echo "GHOST // executor remains production-locked" >&2
-    echo "GHOST // fixture validation is available; real configuration is untouched" >&2
-    exit 20
+test_mode="${GHOST_EXECUTOR_TEST_MODE:-0}"
+if [ "$test_mode" = "1" ]; then
+    case "$GHOST_NIX_CONFIG_PATH" in
+        /tmp/*) ;;
+        *)
+            echo "GHOST // fixture executor requires a target beneath /tmp" >&2
+            exit 21
+            ;;
+    esac
+else
+    expected_config="$HOME/.config/nixos/configuration.nix"
+    expected_module="$HOME/.config/nixos/modules/ghost.nix"
+    if [ "$GHOST_NIX_CONFIG_PATH" != "$expected_config" ] || \
+        [ "$GHOST_NIX_GHOST_MODULE_PATH" != "$expected_module" ]; then
+        echo "GHOST // production executor target mismatch; execution refused" >&2
+        exit 20
+    fi
 fi
-
-case "$GHOST_NIX_CONFIG_PATH" in
-    /tmp/*) ;;
-    *)
-        echo "GHOST // fixture executor requires a target beneath /tmp" >&2
-        exit 21
-        ;;
-esac
 
 for dependency in awk chmod cp diff flock jq mkdir mktemp mv nix-instantiate sha256sum stat; do
     if ! command -v "$dependency" >/dev/null 2>&1; then
@@ -35,7 +40,9 @@ for dependency in awk chmod cp diff flock jq mkdir mktemp mv nix-instantiate sha
 done
 
 ghost_state_init
-if [ ! -s "$GHOST_PROPOSAL_FILE" ] || [ ! -s "$GHOST_APPROVAL_CREDENTIAL_FILE" ]; then
+if [ ! -s "$GHOST_PROPOSAL_FILE" ] || \
+    [ ! -s "$GHOST_APPROVAL_CREDENTIAL_FILE" ] || \
+    [ ! -s "$GHOST_EXECUTION_CHALLENGE_FILE" ]; then
     echo "GHOST // approved proposal credential unavailable" >&2
     exit 4
 fi
@@ -55,13 +62,14 @@ fi
     digest="$(jq -r '.digest // empty' "$GHOST_PROPOSAL_FILE")"
     expires_epoch="$(jq -r '.approval.expires_epoch // 0' "$GHOST_PROPOSAL_FILE")"
     stored_token_sha256="$(jq -r '.approval.token_sha256 // empty' "$GHOST_PROPOSAL_FILE")"
+    execution_expiry="$(jq -r '.execution_authorization.expires_epoch // 0' "$GHOST_PROPOSAL_FILE")"
 
     [ "$proposal_id" = "$stored_id" ] || {
         echo "GHOST // proposal ID mismatch; execution refused" >&2
         exit 5
     }
-    [ "$status" = "approved" ] || {
-        echo "GHOST // proposal is not approved: $status" >&2
+    [ "$status" = "execution-authorized" ] || {
+        echo "GHOST // proposal is not execution-authorized: $status" >&2
         exit 6
     }
     [ "$intent" = "change" ] || {
@@ -72,6 +80,20 @@ fi
         echo "GHOST // approval expired; execution refused" >&2
         exit 8
     }
+    [ "$(date +%s)" -lt "$execution_expiry" ] || {
+        echo "GHOST // execution authorization expired" >&2
+        exit 18
+    }
+
+    challenge_id="$(jq -r '.proposal_id // empty' "$GHOST_EXECUTION_CHALLENGE_FILE")"
+    challenge_digest="$(jq -r '.digest // empty' "$GHOST_EXECUTION_CHALLENGE_FILE")"
+    challenge_consumed="$(jq -r 'if has("consumed") then .consumed else false end' \
+        "$GHOST_EXECUTION_CHALLENGE_FILE")"
+    if [ "$challenge_id" != "$stored_id" ] || [ "$challenge_digest" != "$digest" ] || \
+        [ "$challenge_consumed" != "true" ]; then
+        echo "GHOST // consumed execution challenge unavailable" >&2
+        exit 19
+    fi
 
     computed_digest="$(printf '%s\0%s\0%s' "$request" "$intent" "$plan" | sha256sum | awk '{print $1}')"
     [ "$computed_digest" = "$digest" ] || {
@@ -100,11 +122,11 @@ fi
     fi
 
     request_lower="${request,,}"
-    if [[ ! "$request_lower" =~ (add|install)[[:space:]]+(the[[:space:]]+)?([a-z0-9][a-z0-9+._-]*) ]]; then
+    if [[ ! "$request_lower" =~ (add|install)[[:space:]]+(the[[:space:]]+)?(package[[:space:]]+)?([a-z0-9][a-z0-9+._-]*) ]]; then
         echo "GHOST // unsupported change shape; package addition required" >&2
         exit 12
     fi
-    package="${BASH_REMATCH[3]}"
+    package="${BASH_REMATCH[4]}"
     if [ "$(nix-instantiate --eval --expr \
         "builtins.hasAttr \"${package}\" (import <nixpkgs> {})" 2>/dev/null)" != "true" ]; then
         echo "GHOST // package is not a verified top-level nixpkgs attribute: $package" >&2
@@ -179,9 +201,16 @@ fi
     executed_at="$(date --iso-8601=seconds)"
     post_sha256="$(ghost_file_fingerprint "$GHOST_NIX_CONFIG_PATH")"
     proposal_temporary="$(mktemp "$GHOST_STATE_DIR/.proposal.XXXXXX")"
-    jq --arg executed_at "$executed_at" --arg package "$package" \
+    if [ "$test_mode" = "1" ]; then
+        execution_status="fixture-executed"
+        execution_event="fixture-executed"
+    else
+        execution_status="executed-awaiting-activation"
+        execution_event="configuration-edited"
+    fi
+    jq --arg status "$execution_status" --arg executed_at "$executed_at" --arg package "$package" \
         --arg backup "$backup" --arg post_sha256 "$post_sha256" \
-        '.status = "fixture-executed" |
+        '.status = $status |
          .execution = {executed_at: $executed_at, package: $package,
                        backup: $backup, post_sha256: $post_sha256,
                        activation: "not-run"}' \
@@ -189,7 +218,7 @@ fi
     chmod 600 "$proposal_temporary"
     mv "$proposal_temporary" "$GHOST_PROPOSAL_FILE"
 
-    jq -cn --arg event "fixture-executed" --arg proposal_id "$stored_id" \
+    jq -cn --arg event "$execution_event" --arg proposal_id "$stored_id" \
         --arg digest "$digest" --arg package "$package" \
         --arg executed_at "$executed_at" --arg backup "$backup" \
         --arg post_sha256 "$post_sha256" \
@@ -199,7 +228,11 @@ fi
         >> "$GHOST_APPROVAL_AUDIT_FILE"
 } 9> "$GHOST_STATE_LOCK"
 
-echo "GHOST // FIXTURE EXECUTION VALIDATED"
+if [ "$test_mode" = "1" ]; then
+    echo "GHOST // FIXTURE EXECUTION VALIDATED"
+else
+    echo "GHOST // CONFIGURATION EDITED AND VALIDATED"
+fi
 echo "  package:    $package"
 echo "  syntax:     valid"
 echo "  backup:     $backup"

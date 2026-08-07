@@ -40,7 +40,7 @@ wrong_status=$?
 set -e
 [ "$wrong_status" -eq 5 ]
 
-authorize_output="$("$ROOT/lib/voice-command" \
+authorize_output="$(GHOST_VOICE_COMMAND_EXECUTE=0 "$ROOT/lib/voice-command" \
     "authorize execution ${proposal_id}!")"
 [[ "$authorize_output" == *"executor remains locked"* ]]
 [ "$(jq -r '.status' "$GHOST_PROPOSAL_FILE")" = "execution-authorized" ]

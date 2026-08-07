@@ -173,13 +173,13 @@ Approval never runs a command or edits a file.
 The raw credential is kept in a private mode-0600 state file for internal
 verification, so the user never needs to copy, remember, or repeat it.
 
-The first executor is implemented but remains mechanically production-locked.
-It can only run in explicit fixture-test mode against a configuration beneath
-`/tmp`. The fixture executor supports one operation: adding a verified top-level
-nixpkgs package to `environment.systemPackages`. It verifies approval, digest,
-expiry, credential, and machine fingerprints; creates a private backup; parses
-the edited Nix file; restores the exact original bytes on validation failure;
-records an audit event; prints the diff; and contains no rebuild operation.
+The first production executor supports exactly one operation: adding a verified
+top-level nixpkgs package to `environment.systemPackages` in the known
+`~/.config/nixos/configuration.nix` target. It verifies approval, challenge,
+digest, expiry, credential, and machine fingerprints; creates a private backup;
+parses the edited Nix file; restores the exact original bytes and mode on
+validation failure; records an audit event; prints the diff; and contains no
+rebuild operation. Explicit fixture-test mode remains restricted to `/tmp`.
 
 `ghost shadow [package]` copies the actual Nix configuration and GHOST module
 into an isolated directory beneath `/tmp`, runs the full approved fixture edit,
@@ -198,5 +198,6 @@ The first command issues a two-minute challenge after rechecking approval,
 digest, credential, expiry, and machine fingerprints. The second command must
 match exactly; casual confirmation is ignored. Voice accepts only the exact
 phrases `execute approved proposal <id>` and `authorize execution <id>`. Passing
-the challenge records authorization but still performs no edit because the
-production executor remains locked.
+the challenge invokes only the narrow package editor described above. It stops
+after syntax validation with status `executed-awaiting-activation`; activation
+is a separate future capability.

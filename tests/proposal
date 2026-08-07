@@ -56,5 +56,6 @@ printf '%s\n' \
     "Activation: sudo nixos-rebuild switch -I nixos-config=$HOME/.config/nixos/configuration.nix." \
     "Rollback: revert. Pending review." > "$with_plan"
 "$ROOT/lib/validate-proposal" "$with_plan" "add htop to configuration.nix"
+"$ROOT/lib/validate-proposal" "$with_plan" "add the package htop to configuration.nix"
 
 echo "proposal tests passed"
