@@ -170,3 +170,5 @@ ghost approve <proposal-id>
 ```
 
 Approval never runs a command or edits a file.
+The raw credential is kept in a private mode-0600 state file for internal
+verification, so the user never needs to copy, remember, or repeat it.

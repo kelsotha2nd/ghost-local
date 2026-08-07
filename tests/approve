@@ -22,8 +22,10 @@ proposal_id="$(ghost_proposal_save \
     "Scope. Steps. Risk. Validation. Rollback. Pending review.")"
 approval_output="$(GHOST_APPROVAL_TTL_SECONDS=900 "$ROOT/lib/approve" "$proposal_id")"
 [[ "$approval_output" == *"execution remains locked"* ]]
-token="$(sed -n 's/^  token:   //p' <<< "$approval_output")"
+[[ "$approval_output" != *"token:"* ]]
+token="$(jq -r '.token' "$GHOST_APPROVAL_CREDENTIAL_FILE")"
 [[ "$token" =~ ^[0-9a-f]{32}$ ]]
+[ "$(stat -c '%a' "$GHOST_APPROVAL_CREDENTIAL_FILE")" = "600" ]
 [ "$(jq -r '.status' "$GHOST_PROPOSAL_FILE")" = "approved" ]
 [ "$(jq -r '.approval.token_sha256' "$GHOST_PROPOSAL_FILE")" != "$token" ]
 [ "$(wc -l < "$GHOST_APPROVAL_AUDIT_FILE")" -eq 1 ]

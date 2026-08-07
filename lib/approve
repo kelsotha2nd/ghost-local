@@ -78,6 +78,13 @@ fi
     token="$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
     token_sha256="$(printf '%s' "$token" | sha256sum | awk '{print $1}')"
     temporary="$(mktemp "$GHOST_STATE_DIR/.proposal.XXXXXX")"
+    credential_temporary="$(mktemp "$GHOST_STATE_DIR/.credential.XXXXXX")"
+
+    jq -cn --arg proposal_id "$stored_id" --arg digest "$digest" \
+        --arg token "$token" --argjson expires_epoch "$expires_epoch" \
+        '{proposal_id: $proposal_id, digest: $digest, token: $token,
+          expires_epoch: $expires_epoch}' > "$credential_temporary"
+    chmod 600 "$credential_temporary"
 
     jq --arg approved_at "$approved_at" --arg expires_at "$expires_at" \
         --argjson expires_epoch "$expires_epoch" --arg token_sha256 "$token_sha256" \
@@ -86,6 +93,7 @@ fi
                       expires_epoch: $expires_epoch, token_sha256: $token_sha256}' \
         "$GHOST_PROPOSAL_FILE" > "$temporary"
     chmod 600 "$temporary"
+    mv "$credential_temporary" "$GHOST_APPROVAL_CREDENTIAL_FILE"
     mv "$temporary" "$GHOST_PROPOSAL_FILE"
 
     jq -cn --arg event "approved" --arg proposal_id "$stored_id" \
@@ -99,6 +107,5 @@ fi
 echo "GHOST // PROPOSAL APPROVED — execution remains locked"
 echo "  id:      $proposal_id"
 echo "  expires: $expires_at"
-echo "  token:   $token"
 echo
-echo "Store this token temporarily. Approval alone executes nothing."
+echo "Approval credential stored privately. Nothing has executed."
