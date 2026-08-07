@@ -122,3 +122,17 @@ otherwise change the machine are marked as changes, escalated to the smart lane,
 and stopped at a visible confirmation gate. Destructive requests receive a
 stronger protected-change classification. GHOST does not yet execute these
 plans; this boundary is the contract the future tool runner must enforce.
+
+The first tool runner is read-only and strictly whitelisted:
+
+```bash
+ghost inspect health
+ghost inspect services
+ghost inspect processes
+ghost inspect config
+```
+
+Smart voice investigations automatically attach relevant results from these
+tools for service, performance, process, and Nix configuration questions. The
+runner accepts inspection targets rather than arbitrary shell commands and has
+no mutation path.

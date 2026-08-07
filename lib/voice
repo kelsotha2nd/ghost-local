@@ -29,4 +29,12 @@ if [[ "$request_intent" = *change ]]; then
     printf 'GHOST // SAFETY GATE: %s — approval required before execution\n' \
         "${request_intent^^}"
 fi
+
+if [ "$request_intent" = "inspect" ]; then
+    tool_context="$("$ROOT/lib/inspect" --auto "$transcript")"
+    if [ -n "$tool_context" ]; then
+        export GHOST_TOOL_CONTEXT="$tool_context"
+        echo "GHOST // TOOLS: read-only evidence attached"
+    fi
+fi
 GHOST_SPEAK_RESPONSE=1 exec "$ROOT/lib/ask" "$transcript"

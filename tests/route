@@ -20,6 +20,7 @@ assert_route() {
 
 assert_route fast conversation "hello Ghost"
 assert_route fast inspect "what is my current memory usage?"
+assert_route fast inspect "is Ollama active?"
 assert_route smart inspect "diagnose why my NixOS rebuild failed"
 assert_route smart change "rebuild my NixOS system"
 assert_route smart change "edit my Nix configuration"

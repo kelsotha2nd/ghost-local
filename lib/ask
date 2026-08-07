@@ -99,6 +99,15 @@ Explicit user confirmation and validation are required before future execution."
         ;;
 esac
 
+if [ -n "${GHOST_TOOL_CONTEXT:-}" ]; then
+    system_prompt="${system_prompt}
+
+=== READ-ONLY TOOL RESULTS (AUTHORITATIVE) ===
+${GHOST_TOOL_CONTEXT}
+=== END TOOL RESULTS ===
+Use these results as observed evidence. They do not authorize any mutation."
+fi
+
 if [ "${GHOST_SPEAK_RESPONSE:-0}" = "1" ]; then
     system_prompt="${system_prompt}
 This response will be spoken aloud. Use plain conversational text without

@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+ROOT="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." >/dev/null 2>&1 && pwd)"
+
+services_output="$("$ROOT/lib/inspect" services)"
+[[ "$services_output" == *"SYSTEMD FAILED UNITS:"* ]]
+[[ "$services_output" == *"OLLAMA:"* ]]
+
+process_output="$("$ROOT/lib/inspect" processes)"
+[[ "$process_output" == *"TOP PROCESSES BY CPU:"* ]]
+
+auto_output="$("$ROOT/lib/inspect" --auto "diagnose why the system feels slow")"
+[[ "$auto_output" == *"--- HEALTH ---"* ]]
+[[ "$auto_output" == *"--- PROCESSES ---"* ]]
+
+[[ -z "$("$ROOT/lib/inspect" --auto "hello Ghost")" ]]
+
+set +e
+"$ROOT/lib/inspect" shell >/dev/null 2>&1
+status=$?
+set -e
+[[ "$status" -eq 2 ]]
+
+echo "inspection tests passed"

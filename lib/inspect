@@ -1,0 +1,115 @@
+#!/usr/bin/env bash
+
+set -o pipefail
+
+SOURCE="${BASH_SOURCE[0]}"
+ROOT="$(cd -P "$(dirname "$SOURCE")/.." >/dev/null 2>&1 && pwd)"
+
+inspect_health() {
+    local sensor sensor_path
+    for sensor in system resources storage power network nix status; do
+        sensor_path="$ROOT/sensors/$sensor"
+        if [ -x "$sensor_path" ]; then
+            "$sensor_path" || printf '%s: sensor fault\n' "${sensor^^}"
+        fi
+        echo
+    done
+}
+
+inspect_services() {
+    echo "SYSTEMD FAILED UNITS:"
+    if command -v systemctl >/dev/null 2>&1; then
+        systemctl --failed --no-pager --plain 2>&1 || true
+        echo
+        printf 'OLLAMA: '
+        if systemctl is-active --quiet ollama.service 2>/dev/null; then
+            echo "active"
+        else
+            echo "inactive or unavailable"
+        fi
+    else
+        echo "systemctl unavailable"
+    fi
+}
+
+inspect_processes() {
+    echo "TOP PROCESSES BY CPU:"
+    if command -v ps >/dev/null 2>&1; then
+        printf '%7s %-24s %6s %6s\n' "PID" "COMMAND" "%CPU" "%MEM"
+        ps -eo pid=,comm=,%cpu=,%mem= --sort=-%cpu | sed -n '1,10p'
+    else
+        echo "ps unavailable"
+    fi
+}
+
+inspect_config() {
+    local target result=0
+    local targets=(
+        "/home/${USER}/.config/nixos/configuration.nix"
+        "/home/${USER}/.config/nixos/modules/ghost.nix"
+    )
+
+    echo "NIX CONFIGURATION SYNTAX:"
+    if ! command -v nix-instantiate >/dev/null 2>&1; then
+        echo "nix-instantiate unavailable"
+        return 0
+    fi
+
+    for target in "${targets[@]}"; do
+        if [ ! -r "$target" ]; then
+            printf '%s: unavailable\n' "$target"
+        elif nix-instantiate --parse "$target" >/dev/null 2>&1; then
+            printf '%s: valid\n' "$target"
+        else
+            printf '%s: INVALID\n' "$target"
+            result=1
+        fi
+    done
+    return "$result"
+}
+
+run_target() {
+    case "$1" in
+        health) inspect_health ;;
+        services) inspect_services ;;
+        processes) inspect_processes ;;
+        config) inspect_config ;;
+        *) return 2 ;;
+    esac
+}
+
+if [ "${1:-}" = "--auto" ]; then
+    shift
+    query="${*,,}"
+    targets=()
+
+    [[ "$query" =~ (slow|performance|resource|load|memory[[:space:]]+pressure|cpu|disk[[:space:]]+pressure) ]] && targets+=(health processes)
+    [[ "$query" =~ (service|daemon|systemd|ollama|failed[[:space:]]+unit) ]] && targets+=(services)
+    [[ "$query" =~ (nix[[:space:]]+config|configuration|module|rebuild|syntax) ]] && targets+=(config)
+
+    seen=" "
+    for target in "${targets[@]}"; do
+        [[ "$seen" == *" $target "* ]] && continue
+        seen+="$target "
+        printf '%s\n' "--- ${target^^} ---"
+        run_target "$target" || true
+        echo
+    done
+    exit 0
+fi
+
+target="${1:-}"
+if [ -z "$target" ]; then
+    echo "usage: ghost inspect <health|services|processes|config>" >&2
+    exit 2
+fi
+
+run_target "$target"
+status=$?
+if [ "$status" -ne 0 ]; then
+    if [ "$status" -eq 2 ]; then
+        echo "GHOST // unknown inspection target: $target" >&2
+        echo "allowed: health, services, processes, config" >&2
+    fi
+    exit "$status"
+fi

@@ -22,7 +22,7 @@ if [[ "$lower" =~ (wipe|erase|destroy|format[[:space:]]+(the[[:space:]]+)?(disk|
     intent="protected-change"
 elif [[ "$lower" =~ (fix|repair|implement|refactor|configure|rollback|restore|install|uninstall|remove|upgrade|update|deploy|commit|push|create|edit|modify|change|restart|enable|disable|rebuild[[:space:]]+(my|the|this|nixos|system|machine|configuration)|run[[:space:]]+(a[[:space:]]+)?rebuild|write[[:space:]]+(a|the|some)?[[:space:]]*(code|script|module|config)) ]]; then
     intent="change"
-elif [[ "$lower" =~ (check|inspect|show|list|status|diagnos|debug|troubleshoot|investigat|analy[sz]e|audit|explain|why[[:space:]]|what[[:space:]]+is|how[[:space:]]+much) ]]; then
+elif [[ "$lower" =~ (check|inspect|show|list|status|diagnos|debug|troubleshoot|investigat|analy[sz]e|audit|explain|service|daemon|systemd|ollama|process|why[[:space:]]|what[[:space:]]+is|how[[:space:]]+much) ]]; then
     intent="inspect"
 fi
 
@@ -54,6 +54,10 @@ case "$mode" in
         exit 2
         ;;
 esac
+
+if [ "$mode" = "auto" ] && [ "$lane" = "fast" ] && [ "$intent" = "inspect" ]; then
+    reason="read-only lookup"
+fi
 
 if (( display )); then
     if [ "$lane" = "smart" ]; then
