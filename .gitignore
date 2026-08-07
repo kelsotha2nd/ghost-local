@@ -1,5 +1,6 @@
 # Local environment
 .env
+config/model.env
 
 # OS junk
 .DS_Store

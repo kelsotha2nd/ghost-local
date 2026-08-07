@@ -9,6 +9,18 @@ if [[ "$profile_link" =~ system-([0-9]+)-link ]]; then
 fi
 echo "  generation: $generation"
 
+config_root="$(readlink -f /etc/nixos 2>/dev/null || true)"
+if [ -n "$config_root" ]; then
+    echo "  config:     $config_root"
+    if [ -f "$config_root/flake.nix" ]; then
+        echo "  layout:     flake"
+    else
+        echo "  layout:     module tree"
+    fi
+else
+    echo "  config:     unknown"
+fi
+
 store_usage="$(du -sh /nix/store 2>/dev/null | awk '{print $1}')"
 echo "  store:      ${store_usage:-unknown}"
 

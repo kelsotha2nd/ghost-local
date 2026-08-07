@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+
+SOURCE="${BASH_SOURCE[0]}"
+ROOT="$(cd -P "$(dirname "$SOURCE")/.." >/dev/null 2>&1 && pwd)"
+
+echo "=== IDENTITY AND BEHAVIOR ==="
+if [ -r "$ROOT/config/personality.md" ]; then
+    cat "$ROOT/config/personality.md"
+else
+    echo "Personality configuration unavailable."
+fi
+
+echo
+echo "=== MACHINE MEMORY ==="
+if [ -r "$ROOT/memory/machine.md" ]; then
+    cat "$ROOT/memory/machine.md"
+else
+    echo "Machine memory unavailable."
+fi
+
+echo
+echo "=== LIVE MACHINE STATE ==="
+echo "Observed: $(date --iso-8601=seconds)"
+for sensor in system desktop network storage power nix status; do
+    sensor_path="$ROOT/sensors/$sensor"
+    if [ -x "$sensor_path" ]; then
+        "$sensor_path" || echo "${sensor^^}: sensor fault"
+    else
+        echo "${sensor^^}: sensor offline"
+    fi
+    echo
+done

@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+
+SOURCE="${BASH_SOURCE[0]}"
+ROOT="$(cd -P "$(dirname "$SOURCE")/.." >/dev/null 2>&1 && pwd)"
+MODEL_CONFIG="$ROOT/config/model.env"
+
+if [ -r "$MODEL_CONFIG" ]; then
+    # This is trusted local configuration and is intentionally not committed.
+    # shellcheck source=/dev/null
+    source "$MODEL_CONFIG"
+fi
+
+question="$*"
+if [ -z "$question" ]; then
+    echo "usage: ghost ask <question>" >&2
+    exit 2
+fi
+
+for dependency in curl jq; do
+    if ! command -v "$dependency" >/dev/null 2>&1; then
+        echo "GHOST // missing dependency: $dependency" >&2
+        exit 3
+    fi
+done
+
+api_url="${GHOST_API_URL:-http://127.0.0.1:11434/v1/chat/completions}"
+model="${GHOST_MODEL:-}"
+
+if [ -z "$model" ]; then
+    cat >&2 <<'EOF'
+GHOST // model not configured
+
+Copy config/model.env.example to config/model.env and set GHOST_MODEL.
+The default endpoint expects an OpenAI-compatible server on localhost:11434.
+EOF
+    exit 3
+fi
+
+context="$("$ROOT/lib/context")"
+system_prompt="${context}
+
+=== RESPONSE RULES ===
+Answer as GHOST. Ground claims about the machine only in the supplied live state
+and memory. Say when information is unavailable. Be concise unless detail is
+requested. Never claim to have run an action that was not actually performed."
+
+payload="$(jq -n \
+    --arg model "$model" \
+    --arg system "$system_prompt" \
+    --arg question "$question" \
+    '{model: $model, stream: false, messages: [
+        {role: "system", content: $system},
+        {role: "user", content: $question}
+    ]}')"
+
+headers=(-H "Content-Type: application/json")
+if [ -n "${GHOST_API_KEY:-}" ]; then
+    headers+=(-H "Authorization: Bearer $GHOST_API_KEY")
+fi
+
+response_file="$(mktemp)"
+trap 'rm -f "$response_file"' EXIT
+
+http_status="$(curl --silent --show-error --max-time "${GHOST_API_TIMEOUT:-120}" \
+    --output "$response_file" --write-out '%{http_code}' \
+    "${headers[@]}" --data "$payload" "$api_url")"
+curl_status=$?
+
+if (( curl_status != 0 )); then
+    echo "GHOST // model backend unreachable at $api_url" >&2
+    exit 4
+fi
+
+if [[ ! "$http_status" =~ ^2 ]]; then
+    message="$(jq -r '.error.message // .error // empty' "$response_file" 2>/dev/null)"
+    echo "GHOST // model backend returned HTTP $http_status${message:+: $message}" >&2
+    exit 5
+fi
+
+answer="$(jq -r '.choices[0].message.content // empty' "$response_file" 2>/dev/null)"
+if [ -z "$answer" ]; then
+    echo "GHOST // model backend returned no answer" >&2
+    exit 6
+fi
+
+printf 'GHOST:\n%s\n' "$answer"

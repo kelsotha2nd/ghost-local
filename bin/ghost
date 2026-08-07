@@ -12,6 +12,34 @@ done
 SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE")" >/dev/null 2>&1 && pwd)"
 ROOT="$(dirname "$SCRIPT_DIR")"
 
+case "${1:-}" in
+    ask)
+        shift
+        exec "$ROOT/lib/ask" "$@"
+        ;;
+    context)
+        exec "$ROOT/lib/context"
+        ;;
+    help|-h|--help)
+        cat <<'EOF'
+GHOST // COMMANDS
+
+  ghost                 show current machine state
+  ghost ask <question>  ask GHOST using live machine context
+  ghost context         inspect the context GHOST can see
+  ghost help            show this message
+EOF
+        exit 0
+        ;;
+    "")
+        ;;
+    *)
+        echo "GHOST // unknown command: $1" >&2
+        echo "run 'ghost help' for available commands" >&2
+        exit 2
+        ;;
+esac
+
 echo "========================"
 echo " GHOST // ONLINE"
 echo "========================"
