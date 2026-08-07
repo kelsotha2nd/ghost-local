@@ -97,8 +97,13 @@ or output can be selected in ignored `config/voice.env` using the node names or
 IDs shown by `ghost audio`.
 
 Voice mode reports capture, transcription, model, synthesis, and playback
-timings. It uses a smaller 128-token response budget and six recent messages
-plus a compact live context by default; terminal conversation retains its full
-machine context and larger settings. Use
+timings. It uses the faster non-thinking `qwen3:4b-instruct`, a smaller 128-token response budget,
+six recent messages, and a compact live context by default. Terminal
+conversation retains `qwen3:8b`, its full machine context, and larger settings. Use
 `ghost benchmark` for a repeatable local model throughput measurement before
-and after runtime or acceleration changes.
+and after runtime or acceleration changes. Pass a model name to compare lanes:
+
+```bash
+ghost benchmark qwen3:4b-instruct
+ghost benchmark qwen3:8b
+```

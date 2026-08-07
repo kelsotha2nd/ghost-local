@@ -21,7 +21,7 @@ for dependency in curl jq; do
     fi
 done
 
-model="${GHOST_MODEL:-}"
+model="${1:-${GHOST_MODEL_OVERRIDE:-${GHOST_MODEL:-}}}"
 if [ -z "$model" ]; then
     echo "GHOST // model not configured" >&2
     exit 3

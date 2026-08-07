@@ -49,7 +49,8 @@ case "${1:-}" in
         exec "$ROOT/lib/audio"
         ;;
     benchmark)
-        exec "$ROOT/lib/benchmark"
+        shift
+        exec "$ROOT/lib/benchmark" "$@"
         ;;
     help|-h|--help)
         cat <<'EOF'
@@ -66,7 +67,7 @@ GHOST // COMMANDS
   ghost speak <text>    speak text through the local voice
   ghost voice [seconds] push-to-talk, answer, and speak
   ghost audio           inspect audio devices and selection
-  ghost benchmark       measure local model throughput
+  ghost benchmark [model] measure local model throughput
   ghost help            show this message
 EOF
         exit 0

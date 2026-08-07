@@ -35,7 +35,7 @@ done
 ghost_state_init
 
 api_url="${GHOST_API_URL:-http://127.0.0.1:11434/v1/chat/completions}"
-model="${GHOST_MODEL:-}"
+model="${GHOST_MODEL_OVERRIDE:-${GHOST_MODEL:-}}"
 max_tokens="${GHOST_MAX_TOKENS:-384}"
 history_messages="${GHOST_HISTORY_MESSAGES:-12}"
 
