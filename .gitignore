@@ -1,6 +1,7 @@
 # Local environment
 .env
 config/model.env
+config/voice.env
 
 # OS junk
 .DS_Store

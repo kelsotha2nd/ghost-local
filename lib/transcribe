@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+
+SOURCE="${BASH_SOURCE[0]}"
+ROOT="$(cd -P "$(dirname "$SOURCE")/.." >/dev/null 2>&1 && pwd)"
+# shellcheck source=voice-config
+source "$ROOT/lib/voice-config"
+
+audio_file="${1:-}"
+if [ -z "$audio_file" ] || [ ! -r "$audio_file" ]; then
+    echo "usage: transcribe <audio-file>" >&2
+    exit 2
+fi
+
+if ! command -v whisper-cli >/dev/null 2>&1; then
+    echo "GHOST // missing voice dependency: whisper-cli" >&2
+    exit 3
+fi
+
+if [ -z "${GHOST_WHISPER_MODEL:-}" ] || [ ! -r "$GHOST_WHISPER_MODEL" ]; then
+    echo "GHOST // Whisper model not configured" >&2
+    exit 3
+fi
+
+transcript="$(whisper-cli \
+    --model "$GHOST_WHISPER_MODEL" \
+    --file "$audio_file" \
+    --threads "${GHOST_WHISPER_THREADS:-4}" \
+    --language "${GHOST_WHISPER_LANGUAGE:-en}" \
+    --no-timestamps --no-prints 2>/dev/null)"
+
+transcript="$(sed -e '/^[[:space:]]*$/d' \
+    -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' <<< "$transcript" |
+    paste -sd ' ' -)"
+if [ -z "$transcript" ] || [ "$transcript" = "[BLANK_AUDIO]" ]; then
+    echo "GHOST // no speech detected" >&2
+    exit 4
+fi
+
+printf '%s\n' "$transcript"

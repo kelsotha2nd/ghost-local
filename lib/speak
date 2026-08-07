@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+
+SOURCE="${BASH_SOURCE[0]}"
+ROOT="$(cd -P "$(dirname "$SOURCE")/.." >/dev/null 2>&1 && pwd)"
+# shellcheck source=voice-config
+source "$ROOT/lib/voice-config"
+
+text="$*"
+if [ -z "$text" ] && [ ! -t 0 ]; then
+    text="$(cat)"
+fi
+if [ -z "$text" ]; then
+    echo "usage: ghost speak <text>" >&2
+    exit 2
+fi
+
+for dependency in piper pw-play; do
+    if ! command -v "$dependency" >/dev/null 2>&1; then
+        echo "GHOST // missing voice dependency: $dependency" >&2
+        exit 3
+    fi
+done
+
+if [ -z "${GHOST_PIPER_MODEL:-}" ] || [ ! -r "$GHOST_PIPER_MODEL" ] ||
+   [ -z "${GHOST_PIPER_CONFIG:-}" ] || [ ! -r "$GHOST_PIPER_CONFIG" ]; then
+    echo "GHOST // Piper voice not configured" >&2
+    exit 3
+fi
+
+audio_file="$(mktemp --suffix=.wav)"
+trap 'rm -f "$audio_file"' EXIT INT TERM
+
+if ! piper --model "$GHOST_PIPER_MODEL" --config "$GHOST_PIPER_CONFIG" \
+    --output-file "$audio_file" -- "$text" >/dev/null; then
+    echo "GHOST // speech synthesis failed" >&2
+    exit 4
+fi
+
+pw-play "$audio_file"

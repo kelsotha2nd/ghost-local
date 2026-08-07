@@ -33,6 +33,18 @@ case "${1:-}" in
     memories)
         exec "$ROOT/lib/memories"
         ;;
+    listen)
+        shift
+        exec "$ROOT/lib/listen" "$@"
+        ;;
+    speak)
+        shift
+        exec "$ROOT/lib/speak" "$@"
+        ;;
+    voice)
+        shift
+        exec "$ROOT/lib/voice" "$@"
+        ;;
     help|-h|--help)
         cat <<'EOF'
 GHOST // COMMANDS
@@ -44,6 +56,9 @@ GHOST // COMMANDS
   ghost clear           clear conversation history
   ghost remember <fact> store a deliberate long-term memory
   ghost memories        show deliberate memories
+  ghost listen [seconds] record and transcribe one utterance
+  ghost speak <text>    speak text through the local voice
+  ghost voice [seconds] listen, answer, and speak
   ghost help            show this message
 EOF
         exit 0

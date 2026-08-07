@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+
+SOURCE="${BASH_SOURCE[0]}"
+ROOT="$(cd -P "$(dirname "$SOURCE")/.." >/dev/null 2>&1 && pwd)"
+# shellcheck source=voice-config
+source "$ROOT/lib/voice-config"
+
+duration="${1:-${GHOST_RECORD_SECONDS:-6}}"
+if [[ ! "$duration" =~ ^[1-9][0-9]*$ ]]; then
+    echo "GHOST // recording duration must be a positive integer" >&2
+    exit 2
+fi
+
+if ! command -v pw-record >/dev/null 2>&1; then
+    echo "GHOST // missing voice dependency: pw-record" >&2
+    exit 3
+fi
+
+audio_file="$(mktemp --suffix=.wav)"
+trap 'rm -f "$audio_file"' EXIT INT TERM
+
+echo "GHOST // LISTENING (${duration}s)" >&2
+if ! pw-record --rate 16000 --channels 1 --format s16 \
+    --sample-count "$((duration * 16000))" "$audio_file"; then
+    echo "GHOST // recording failed" >&2
+    exit 4
+fi
+
+echo "GHOST // TRANSCRIBING" >&2
+"$ROOT/lib/transcribe" "$audio_file"

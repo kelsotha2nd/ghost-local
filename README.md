@@ -14,6 +14,7 @@ It is not an operating system or a general-purpose AI framework.
 - Machine-specific memory
 - Grounded model conversations through `ghost ask`
 - Private conversation continuity and deliberate long-term memories
+- Local push-to-talk, transcription, and spoken responses
 - Global command through a user-local symlink
 
 ## Layout
@@ -73,3 +74,19 @@ ghost memories
 ```
 
 Clearing conversation history does not remove deliberate memories.
+
+## Voice
+
+The NixOS runtime module provides Whisper.cpp, Piper, pinned speech models, and
+PipeWire tools. After activating that module:
+
+```bash
+ghost listen 6
+ghost speak "system nominal"
+ghost voice 6
+```
+
+`ghost voice` records one bounded utterance, transcribes it locally, passes it
+through the same context and conversation history as `ghost ask`, and speaks
+the answer locally. The initial Piper voice is a reference voice intended for
+testing; it is not GHOST's permanent voice identity.

@@ -73,6 +73,12 @@ Answer as GHOST. Ground claims about the machine only in the supplied live state
 and memory. Say when information is unavailable. Be concise unless detail is
 requested. Never claim to have run an action that was not actually performed."
 
+if [ "${GHOST_SPEAK_RESPONSE:-0}" = "1" ]; then
+    system_prompt="${system_prompt}
+This response will be spoken aloud. Use plain conversational text without
+Markdown, lists, headings, code fences, emoji, or stage directions."
+fi
+
 payload="$(jq -n \
     --arg model "$model" \
     --arg system "$system_prompt" \
@@ -129,3 +135,7 @@ fi
 
 ghost_history_append "user" "$question"
 ghost_history_append "assistant" "$answer"
+
+if [ "${GHOST_SPEAK_RESPONSE:-0}" = "1" ]; then
+    "$ROOT/lib/speak" "$answer" || echo "GHOST // spoken output failed" >&2
+fi

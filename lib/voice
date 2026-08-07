@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+
+SOURCE="${BASH_SOURCE[0]}"
+ROOT="$(cd -P "$(dirname "$SOURCE")/.." >/dev/null 2>&1 && pwd)"
+
+transcript="$("$ROOT/lib/listen" "${1:-}")" || exit $?
+echo "YOU: $transcript"
+GHOST_SPEAK_RESPONSE=1 exec "$ROOT/lib/ask" "$transcript"
