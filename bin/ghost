@@ -85,6 +85,10 @@ case "${1:-}" in
         shift
         exec "$ROOT/lib/verify" "$@"
         ;;
+    activation)
+        shift
+        exec "$ROOT/lib/activation-challenge" "$@"
+        ;;
     audio)
         exec "$ROOT/lib/audio"
         ;;
@@ -116,6 +120,7 @@ GHOST // COMMANDS
   ghost authorize execution <id> authorize the locked executor
   ghost shadow [package] test execution on an isolated config clone
   ghost verify <id>     fully evaluate an executed change without activation
+  ghost activation [id] issue a system activation challenge
   ghost audio           inspect audio devices and selection
   ghost benchmark [model] measure local model throughput
   ghost help            show this message

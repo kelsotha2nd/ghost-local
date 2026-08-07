@@ -6,6 +6,14 @@ transcript="$*"
 command="${transcript,,}"
 command="${command%[.!?]}"
 
+if [[ "$command" =~ ^(ghost[,[:space:]]+)?authorize[[:space:]]+system[[:space:]]+activation$ ]]; then
+    "$ROOT/lib/authorize-activation" || exit $?
+    if [ "${GHOST_VOICE_COMMAND_SPEAK:-0}" = "1" ]; then
+        "$ROOT/lib/speak" "System activation is authorized, but the activator remains locked. Nothing has switched." || true
+    fi
+    exit 0
+fi
+
 if [[ "$command" =~ ^(ghost[,[:space:]]+)?stage[[:space:]]+this[[:space:]]+proposal$ ]]; then
     "$ROOT/lib/stage" || exit $?
     if [ "${GHOST_VOICE_COMMAND_SPEAK:-0}" = "1" ]; then
@@ -26,7 +34,7 @@ if [[ "$command" =~ ^(ghost[,[:space:]]+)?authorize[[:space:]]+package[[:space:]
     GHOST_AUTHORIZE_EXECUTE="${GHOST_VOICE_COMMAND_EXECUTE:-1}" \
         "$ROOT/lib/authorize" execution "$proposal_id" || exit $?
     if [ "${GHOST_VOICE_COMMAND_SPEAK:-0}" = "1" ]; then
-        "$ROOT/lib/speak" "The package edit completed with backup and validation. System activation has not run." || true
+        "$ROOT/lib/speak" "The package edit completed with backup and full NixOS validation. System activation has not run. To switch to the validated configuration, say authorize system activation." || true
     fi
     exit 0
 fi

@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+ROOT="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." >/dev/null 2>&1 && pwd)"
+temporary_root="$(mktemp -d /tmp/ghost-activation-test.XXXXXX)"
+trap 'rm -r "$temporary_root"' EXIT
+export GHOST_STATE_DIR="$temporary_root/state"
+export GHOST_NIX_CONFIG_PATH="$temporary_root/configuration.nix"
+export GHOST_NIX_GHOST_MODULE_PATH="$temporary_root/ghost.nix"
+
+write_fixture() {
+    printf '%s\n' \
+        '{ pkgs, ... }:' '{' \
+        '  environment.systemPackages = with pkgs; [' \
+        '    curl' '  ];' '}' > "$GHOST_NIX_CONFIG_PATH"
+    printf '%s\n' '{ ... }: { }' > "$GHOST_NIX_GHOST_MODULE_PATH"
+}
+
+# shellcheck source=../lib/state
+source "$ROOT/lib/state"
+ghost_state_init
+
+prepare_activation() {
+    local package="$1"
+    local proposal_id
+    proposal_id="$(ghost_proposal_save \
+        "add ${package} to configuration.nix" "change" \
+        "Scope. Steps. Risk. Validation. Rollback. Pending review.")"
+    "$ROOT/lib/approve" "$proposal_id" >/dev/null
+    "$ROOT/lib/challenge" "$proposal_id" >/dev/null
+    "$ROOT/lib/authorize" execution "$proposal_id" >/dev/null
+    GHOST_EXECUTOR_TEST_MODE=1 "$ROOT/lib/execute" "$proposal_id" >/dev/null
+    GHOST_VERIFY_TEST_MODE=1 GHOST_SKIP_FULL_EVALUATION=1 \
+        GHOST_PREPARE_ACTIVATION=1 "$ROOT/lib/verify" "$proposal_id" >/dev/null
+    printf '%s\n' "$proposal_id"
+}
+
+write_fixture
+proposal_id="$(prepare_activation htop)"
+[ "$(jq -r '.status' "$GHOST_PROPOSAL_FILE")" = "fixture-validated" ]
+[ "$(jq -r '.consumed' "$GHOST_ACTIVATION_CHALLENGE_FILE")" = "false" ]
+
+set +e
+"$ROOT/lib/voice-command" "yes activate it" >/dev/null 2>&1
+casual_status=$?
+set -e
+[ "$casual_status" -eq 64 ]
+
+authorize_output="$("$ROOT/lib/voice-command" "authorize system activation.")"
+[[ "$authorize_output" == *"activator remains locked"* ]]
+[ "$(jq -r '.status' "$GHOST_PROPOSAL_FILE")" = "activation-authorized" ]
+[ "$(jq -r '.consumed' "$GHOST_ACTIVATION_CHALLENGE_FILE")" = "true" ]
+
+set +e
+"$ROOT/lib/activate" "$proposal_id" >/dev/null 2>&1
+locked_status=$?
+set -e
+[ "$locked_status" -eq 30 ]
+
+activation_output="$(GHOST_ACTIVATOR_TEST_MODE=1 \
+    GHOST_TEST_GENERATION_BEFORE=100 "$ROOT/lib/activate" "$proposal_id")"
+[[ "$activation_output" == *"100 -> 101"* ]]
+[ "$(jq -r '.status' "$GHOST_PROPOSAL_FILE")" = "fixture-activated" ]
+
+write_fixture
+failed_id="$(prepare_activation jq)"
+"$ROOT/lib/authorize-activation" >/dev/null
+GHOST_ACTIVATOR_TEST_MODE=1 GHOST_TEST_ACTIVATION_RESULT=failure \
+    "$ROOT/lib/activate" "$failed_id" >/dev/null
+[ "$(jq -r '.status' "$GHOST_PROPOSAL_FILE")" = "activation-failed" ]
+[ "$(jq -r '.activation.generation_before' "$GHOST_PROPOSAL_FILE")" = \
+    "$(jq -r '.activation.generation_after' "$GHOST_PROPOSAL_FILE")" ]
+
+echo "activation tests passed"

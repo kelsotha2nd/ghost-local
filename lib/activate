@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+
+SOURCE="${BASH_SOURCE[0]}"
+ROOT="$(cd -P "$(dirname "$SOURCE")/.." >/dev/null 2>&1 && pwd)"
+# shellcheck source=state
+source "$ROOT/lib/state"
+
+if [ "${GHOST_ACTIVATOR_TEST_MODE:-0}" != "1" ]; then
+    echo "GHOST // system activator remains production-locked" >&2
+    exit 30
+fi
+case "$GHOST_NIX_CONFIG_PATH" in
+    /tmp/*) ;;
+    *) echo "GHOST // activation fixture must live beneath /tmp" >&2; exit 21 ;;
+esac
+
+ghost_state_init
+proposal_id="${1:-$(jq -r '.id // empty' "$GHOST_PROPOSAL_FILE")}"
+status="$(jq -r '.status // empty' "$GHOST_PROPOSAL_FILE")"
+[ "$status" = "activation-authorized" ] || {
+    echo "GHOST // fixture activation is not authorized" >&2
+    exit 6
+}
+[ "$proposal_id" = "$(jq -r '.id' "$GHOST_PROPOSAL_FILE")" ] || exit 5
+
+before_generation="${GHOST_TEST_GENERATION_BEFORE:-100}"
+result="${GHOST_TEST_ACTIVATION_RESULT:-success}"
+activated_at="$(date --iso-8601=seconds)"
+temporary="$(mktemp "$GHOST_STATE_DIR/.proposal.XXXXXX")"
+if [ "$result" = "success" ]; then
+    after_generation="$((before_generation + 1))"
+    new_status="fixture-activated"
+else
+    after_generation="$before_generation"
+    new_status="activation-failed"
+fi
+jq --arg status "$new_status" --arg activated_at "$activated_at" \
+    --arg result "$result" --arg before "$before_generation" --arg after "$after_generation" \
+    '.status = $status |
+     .activation = {activated_at: $activated_at, result: $result,
+                    generation_before: $before, generation_after: $after}' \
+    "$GHOST_PROPOSAL_FILE" > "$temporary"
+chmod 600 "$temporary"
+mv "$temporary" "$GHOST_PROPOSAL_FILE"
+
+echo "GHOST // FIXTURE ACTIVATION ${result^^}"
+echo "  generation: $before_generation -> $after_generation"

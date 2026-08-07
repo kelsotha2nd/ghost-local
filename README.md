@@ -223,3 +223,10 @@ system with `nix-instantiate`. Evaluation produces a derivation but does not
 build or activate it. Failure restores the original file and mode; success moves
 the proposal to `validated-awaiting-activation`. `ghost verify <id>` exposes the
 same gate for recovery and diagnostics.
+
+Successful evaluation automatically prepares a separate two-minute system
+activation challenge. Only the exact phrase `authorize system activation`
+consumes it; casual confirmation is ignored. The activation state machine tracks
+the generation before and after a simulated switch and records failure without
+advancing the generation. The real activator remains production-locked and
+contains no `sudo` or `nixos-rebuild` path yet.

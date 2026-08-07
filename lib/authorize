@@ -7,8 +7,12 @@ ROOT="$(cd -P "$(dirname "$SOURCE")/.." >/dev/null 2>&1 && pwd)"
 # shellcheck source=state
 source "$ROOT/lib/state"
 
+if [ "${1:-}" = "activation" ] && [ -z "${2:-}" ]; then
+    exec "$ROOT/lib/authorize-activation"
+fi
+
 if [ "${1:-}" != "execution" ] || [ -z "${2:-}" ] || [ -n "${3:-}" ]; then
-    echo "usage: ghost authorize execution <proposal-id>" >&2
+    echo "usage: ghost authorize <execution proposal-id|activation>" >&2
     exit 2
 fi
 proposal_id="$2"
@@ -112,5 +116,5 @@ if [ "${GHOST_AUTHORIZE_EXECUTE:-0}" = "1" ]; then
     echo
     "$ROOT/lib/execute" "$proposal_id" || exit $?
     echo
-    "$ROOT/lib/verify" "$proposal_id"
+    GHOST_PREPARE_ACTIVATION=1 "$ROOT/lib/verify" "$proposal_id"
 fi

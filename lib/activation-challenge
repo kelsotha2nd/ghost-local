@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+
+set -o pipefail
+
+SOURCE="${BASH_SOURCE[0]}"
+ROOT="$(cd -P "$(dirname "$SOURCE")/.." >/dev/null 2>&1 && pwd)"
+# shellcheck source=state
+source "$ROOT/lib/state"
+ghost_state_init
+
+[ -s "$GHOST_PROPOSAL_FILE" ] || {
+    echo "GHOST // validated proposal unavailable" >&2
+    exit 4
+}
+proposal_id="${1:-$(jq -r '.id // empty' "$GHOST_PROPOSAL_FILE")}"
+
+{
+    flock -x 9
+    stored_id="$(jq -r '.id // empty' "$GHOST_PROPOSAL_FILE")"
+    status="$(jq -r '.status // empty' "$GHOST_PROPOSAL_FILE")"
+    digest="$(jq -r '.digest // empty' "$GHOST_PROPOSAL_FILE")"
+    post_sha256="$(jq -r '.execution.post_sha256 // empty' "$GHOST_PROPOSAL_FILE")"
+    module_sha256="$(jq -r '.machine_fingerprint.ghost_module.sha256 // empty' "$GHOST_PROPOSAL_FILE")"
+    verification_result="$(jq -r '.verification.result // empty' "$GHOST_PROPOSAL_FILE")"
+    derivation="$(jq -r '.verification.derivation // empty' "$GHOST_PROPOSAL_FILE")"
+
+    [ "$proposal_id" = "$stored_id" ] || {
+        echo "GHOST // proposal ID mismatch; activation challenge refused" >&2
+        exit 5
+    }
+    case "$status" in
+        validated-awaiting-activation|fixture-validated) ;;
+        *) echo "GHOST // proposal is not validated for activation: $status" >&2; exit 6 ;;
+    esac
+    [ "$verification_result" = "passed" ] && [ -n "$derivation" ] || {
+        echo "GHOST // successful NixOS evaluation unavailable" >&2
+        exit 7
+    }
+    [ "$(ghost_file_fingerprint "$GHOST_NIX_CONFIG_PATH")" = "$post_sha256" ] && \
+        [ "$(ghost_file_fingerprint "$GHOST_NIX_GHOST_MODULE_PATH")" = "$module_sha256" ] || {
+        echo "GHOST // validated files changed; activation challenge refused" >&2
+        exit 8
+    }
+
+    ttl="${GHOST_ACTIVATION_CHALLENGE_TTL_SECONDS:-120}"
+    [[ "$ttl" =~ ^[1-9][0-9]*$ ]] || {
+        echo "GHOST // invalid activation challenge TTL" >&2
+        exit 3
+    }
+    now_epoch="$(date +%s)"
+    expires_epoch="$((now_epoch + ttl))"
+    created_at="$(date --iso-8601=seconds)"
+    expires_at="$(date --date="@${expires_epoch}" --iso-8601=seconds)"
+    nonce="$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
+    temporary="$(mktemp "$GHOST_STATE_DIR/.activation.XXXXXX")"
+    jq -cn --arg proposal_id "$stored_id" --arg digest "$digest" \
+        --arg derivation "$derivation" --arg nonce "$nonce" \
+        --arg created_at "$created_at" --arg expires_at "$expires_at" \
+        --argjson expires_epoch "$expires_epoch" \
+        '{proposal_id: $proposal_id, digest: $digest, derivation: $derivation,
+          nonce: $nonce, created_at: $created_at, expires_at: $expires_at,
+          expires_epoch: $expires_epoch, consumed: false}' > "$temporary"
+    chmod 600 "$temporary"
+    mv "$temporary" "$GHOST_ACTIVATION_CHALLENGE_FILE"
+} 9> "$GHOST_STATE_LOCK"
+
+echo "GHOST // SYSTEM ACTIVATION CHALLENGE ISSUED — nothing activated"
+echo "  expires: $expires_at"
+echo "  action:  build and switch to the validated NixOS configuration"
+echo
+echo "To authorize activation, say exactly:"
+echo "authorize system activation"

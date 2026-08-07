@@ -142,3 +142,8 @@ ghost_state_init
 echo "GHOST // NIXOS EVALUATION PASSED"
 echo "  derivation: $derivation"
 echo "  activation: not run"
+
+if [ "${GHOST_PREPARE_ACTIVATION:-0}" = "1" ]; then
+    echo
+    "$ROOT/lib/activation-challenge" "$proposal_id"
+fi
