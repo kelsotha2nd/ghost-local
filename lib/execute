@@ -1,0 +1,208 @@
+#!/usr/bin/env bash
+
+set -o pipefail
+
+SOURCE="${BASH_SOURCE[0]}"
+ROOT="$(cd -P "$(dirname "$SOURCE")/.." >/dev/null 2>&1 && pwd)"
+# shellcheck source=state
+source "$ROOT/lib/state"
+
+proposal_id="${1:-}"
+if [ -z "$proposal_id" ]; then
+    echo "usage: ghost execute <proposal-id>" >&2
+    exit 2
+fi
+
+if [ "${GHOST_EXECUTOR_TEST_MODE:-0}" != "1" ]; then
+    echo "GHOST // executor remains production-locked" >&2
+    echo "GHOST // fixture validation is available; real configuration is untouched" >&2
+    exit 20
+fi
+
+case "$GHOST_NIX_CONFIG_PATH" in
+    /tmp/*) ;;
+    *)
+        echo "GHOST // fixture executor requires a target beneath /tmp" >&2
+        exit 21
+        ;;
+esac
+
+for dependency in awk chmod cp diff flock jq mkdir mktemp mv nix-instantiate sha256sum stat; do
+    if ! command -v "$dependency" >/dev/null 2>&1; then
+        echo "GHOST // missing dependency: $dependency" >&2
+        exit 3
+    fi
+done
+
+ghost_state_init
+if [ ! -s "$GHOST_PROPOSAL_FILE" ] || [ ! -s "$GHOST_APPROVAL_CREDENTIAL_FILE" ]; then
+    echo "GHOST // approved proposal credential unavailable" >&2
+    exit 4
+fi
+if [ ! -f "$GHOST_NIX_CONFIG_PATH" ] || [ -L "$GHOST_NIX_CONFIG_PATH" ]; then
+    echo "GHOST // executor requires a regular, non-symlink configuration file" >&2
+    exit 22
+fi
+
+{
+    flock -x 9
+
+    stored_id="$(jq -r '.id // empty' "$GHOST_PROPOSAL_FILE")"
+    status="$(jq -r '.status // empty' "$GHOST_PROPOSAL_FILE")"
+    intent="$(jq -r '.intent // empty' "$GHOST_PROPOSAL_FILE")"
+    request="$(jq -r '.request // empty' "$GHOST_PROPOSAL_FILE")"
+    plan="$(jq -r '.plan // empty' "$GHOST_PROPOSAL_FILE")"
+    digest="$(jq -r '.digest // empty' "$GHOST_PROPOSAL_FILE")"
+    expires_epoch="$(jq -r '.approval.expires_epoch // 0' "$GHOST_PROPOSAL_FILE")"
+    stored_token_sha256="$(jq -r '.approval.token_sha256 // empty' "$GHOST_PROPOSAL_FILE")"
+
+    [ "$proposal_id" = "$stored_id" ] || {
+        echo "GHOST // proposal ID mismatch; execution refused" >&2
+        exit 5
+    }
+    [ "$status" = "approved" ] || {
+        echo "GHOST // proposal is not approved: $status" >&2
+        exit 6
+    }
+    [ "$intent" = "change" ] || {
+        echo "GHOST // executor only accepts non-protected changes" >&2
+        exit 7
+    }
+    [ "$(date +%s)" -lt "$expires_epoch" ] || {
+        echo "GHOST // approval expired; execution refused" >&2
+        exit 8
+    }
+
+    computed_digest="$(printf '%s\0%s\0%s' "$request" "$intent" "$plan" | sha256sum | awk '{print $1}')"
+    [ "$computed_digest" = "$digest" ] || {
+        echo "GHOST // proposal digest mismatch; execution refused" >&2
+        exit 9
+    }
+
+    current_fingerprint="$(ghost_machine_fingerprint)"
+    stored_fingerprint="$(jq -c '.machine_fingerprint' "$GHOST_PROPOSAL_FILE")"
+    [ "$current_fingerprint" = "$stored_fingerprint" ] || {
+        echo "GHOST // target changed after proposal; execution refused" >&2
+        exit 10
+    }
+
+    credential_id="$(jq -r '.proposal_id // empty' "$GHOST_APPROVAL_CREDENTIAL_FILE")"
+    credential_digest="$(jq -r '.digest // empty' "$GHOST_APPROVAL_CREDENTIAL_FILE")"
+    credential_expiry="$(jq -r '.expires_epoch // 0' "$GHOST_APPROVAL_CREDENTIAL_FILE")"
+    token="$(jq -r '.token // empty' "$GHOST_APPROVAL_CREDENTIAL_FILE")"
+    token_sha256="$(printf '%s' "$token" | sha256sum | awk '{print $1}')"
+    if [ "$credential_id" != "$stored_id" ] || \
+        [ "$credential_digest" != "$digest" ] || \
+        [ "$credential_expiry" != "$expires_epoch" ] || \
+        [ "$token_sha256" != "$stored_token_sha256" ]; then
+        echo "GHOST // approval credential mismatch; execution refused" >&2
+        exit 11
+    fi
+
+    request_lower="${request,,}"
+    if [[ ! "$request_lower" =~ (add|install)[[:space:]]+(the[[:space:]]+)?([a-z0-9][a-z0-9+._-]*) ]]; then
+        echo "GHOST // unsupported change shape; package addition required" >&2
+        exit 12
+    fi
+    package="${BASH_REMATCH[3]}"
+    if [ "$(nix-instantiate --eval --expr \
+        "builtins.hasAttr \"${package}\" (import <nixpkgs> {})" 2>/dev/null)" != "true" ]; then
+        echo "GHOST // package is not a verified top-level nixpkgs attribute: $package" >&2
+        exit 13
+    fi
+
+    if awk -v package="$package" '
+        /^[[:space:]]*environment\.systemPackages = with pkgs; \[/ {inside=1; next}
+        inside && /^[[:space:]]*\];/ {inside=0}
+        inside {
+            line=$0
+            sub(/[[:space:]]*#.*/, "", line)
+            gsub(/^[[:space:]]+|[[:space:]]+$/, "", line)
+            if (line == package) found=1
+        }
+        END {exit !found}
+    ' "$GHOST_NIX_CONFIG_PATH"; then
+        echo "GHOST // package already present: $package" >&2
+        exit 14
+    fi
+
+    backup_dir="$GHOST_STATE_DIR/backups"
+    mkdir -p "$backup_dir"
+    chmod 700 "$backup_dir"
+    backup="$backup_dir/${proposal_id}-configuration.nix"
+    cp -p "$GHOST_NIX_CONFIG_PATH" "$backup"
+    original_mode="$(stat -c '%a' "$GHOST_NIX_CONFIG_PATH")"
+    chmod 600 "$backup"
+    original_sha256="$(ghost_file_fingerprint "$GHOST_NIX_CONFIG_PATH")"
+    edited="$(mktemp "$(dirname "$GHOST_NIX_CONFIG_PATH")/.ghost-edit.XXXXXX")"
+
+    if ! awk -v package="$package" '
+        /^[[:space:]]*environment\.systemPackages = with pkgs; \[/ && !inserted {
+            print
+            match($0, /^[[:space:]]*/)
+            indent=substr($0, RSTART, RLENGTH) "  "
+            print indent package
+            inserted=1
+            next
+        }
+        {print}
+        END {if (!inserted) exit 42}
+    ' "$GHOST_NIX_CONFIG_PATH" > "$edited"; then
+        cp -p "$backup" "$GHOST_NIX_CONFIG_PATH"
+        chmod "$original_mode" "$GHOST_NIX_CONFIG_PATH"
+        echo "GHOST // expected systemPackages block not found; restored backup" >&2
+        exit 15
+    fi
+
+    chmod --reference="$GHOST_NIX_CONFIG_PATH" "$edited"
+    mv "$edited" "$GHOST_NIX_CONFIG_PATH"
+
+    validation_ok=1
+    if [ "${GHOST_FORCE_VALIDATION_FAILURE:-0}" = "1" ]; then
+        validation_ok=0
+    elif ! nix-instantiate --parse "$GHOST_NIX_CONFIG_PATH" >/dev/null 2>&1; then
+        validation_ok=0
+    fi
+
+    if [ "$validation_ok" -ne 1 ]; then
+        cp -p "$backup" "$GHOST_NIX_CONFIG_PATH"
+        chmod "$original_mode" "$GHOST_NIX_CONFIG_PATH"
+        restored_sha256="$(ghost_file_fingerprint "$GHOST_NIX_CONFIG_PATH")"
+        if [ "$restored_sha256" != "$original_sha256" ]; then
+            echo "GHOST // CRITICAL: validation failed and backup restoration mismatched" >&2
+            exit 17
+        fi
+        echo "GHOST // validation failed; original configuration restored" >&2
+        exit 16
+    fi
+
+    executed_at="$(date --iso-8601=seconds)"
+    post_sha256="$(ghost_file_fingerprint "$GHOST_NIX_CONFIG_PATH")"
+    proposal_temporary="$(mktemp "$GHOST_STATE_DIR/.proposal.XXXXXX")"
+    jq --arg executed_at "$executed_at" --arg package "$package" \
+        --arg backup "$backup" --arg post_sha256 "$post_sha256" \
+        '.status = "fixture-executed" |
+         .execution = {executed_at: $executed_at, package: $package,
+                       backup: $backup, post_sha256: $post_sha256,
+                       activation: "not-run"}' \
+        "$GHOST_PROPOSAL_FILE" > "$proposal_temporary"
+    chmod 600 "$proposal_temporary"
+    mv "$proposal_temporary" "$GHOST_PROPOSAL_FILE"
+
+    jq -cn --arg event "fixture-executed" --arg proposal_id "$stored_id" \
+        --arg digest "$digest" --arg package "$package" \
+        --arg executed_at "$executed_at" --arg backup "$backup" \
+        --arg post_sha256 "$post_sha256" \
+        '{event: $event, proposal_id: $proposal_id, digest: $digest,
+          package: $package, executed_at: $executed_at, backup: $backup,
+          post_sha256: $post_sha256, activation: "not-run"}' \
+        >> "$GHOST_APPROVAL_AUDIT_FILE"
+} 9> "$GHOST_STATE_LOCK"
+
+echo "GHOST // FIXTURE EXECUTION VALIDATED"
+echo "  package:    $package"
+echo "  syntax:     valid"
+echo "  backup:     $backup"
+echo "  activation: not run"
+echo
+diff -u "$backup" "$GHOST_NIX_CONFIG_PATH" || true

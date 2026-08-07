@@ -1,0 +1,111 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+ROOT="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." >/dev/null 2>&1 && pwd)"
+temporary_root="$(mktemp -d /tmp/ghost-executor-test.XXXXXX)"
+trap 'rm -r "$temporary_root"' EXIT
+export GHOST_STATE_DIR="$temporary_root/state"
+export GHOST_NIX_CONFIG_PATH="$temporary_root/configuration.nix"
+export GHOST_NIX_GHOST_MODULE_PATH="$temporary_root/ghost.nix"
+
+write_fixture() {
+    printf '%s\n' \
+        '{ pkgs, ... }:' \
+        '{' \
+        '  environment.systemPackages = with pkgs; [' \
+        '    curl' \
+        '  ];' \
+        '}' > "$GHOST_NIX_CONFIG_PATH"
+    printf '%s\n' '{ ... }: { }' > "$GHOST_NIX_GHOST_MODULE_PATH"
+}
+
+write_fixture
+
+# shellcheck source=../lib/state
+source "$ROOT/lib/state"
+ghost_state_init
+
+set +e
+"$ROOT/lib/execute" fixture >/dev/null 2>&1
+locked_status=$?
+set -e
+[ "$locked_status" -eq 20 ]
+
+proposal_id="$(ghost_proposal_save \
+    "add htop to configuration.nix" "change" \
+    "Scope. Steps. Risk. Validation. Rollback. Pending review.")"
+"$ROOT/lib/approve" "$proposal_id" >/dev/null
+execution_output="$(GHOST_EXECUTOR_TEST_MODE=1 "$ROOT/lib/execute" "$proposal_id")"
+[[ "$execution_output" == *"FIXTURE EXECUTION VALIDATED"* ]]
+grep -Eq '^[[:space:]]+htop$' "$GHOST_NIX_CONFIG_PATH"
+[ "$(jq -r '.status' "$GHOST_PROPOSAL_FILE")" = "fixture-executed" ]
+[ "$(jq -r '.execution.activation' "$GHOST_PROPOSAL_FILE")" = "not-run" ]
+[ -s "$(jq -r '.execution.backup' "$GHOST_PROPOSAL_FILE")" ]
+
+duplicate_id="$(ghost_proposal_save \
+    "add htop to configuration.nix" "change" \
+    "Scope. Steps. Risk. Validation. Rollback. Pending review.")"
+"$ROOT/lib/approve" "$duplicate_id" >/dev/null
+set +e
+GHOST_EXECUTOR_TEST_MODE=1 "$ROOT/lib/execute" "$duplicate_id" >/dev/null 2>&1
+duplicate_status=$?
+set -e
+[ "$duplicate_status" -eq 14 ]
+
+write_fixture
+rollback_id="$(ghost_proposal_save \
+    "add jq to configuration.nix" "change" \
+    "Scope. Steps. Risk. Validation. Rollback. Pending review.")"
+"$ROOT/lib/approve" "$rollback_id" >/dev/null
+before_sha256="$(sha256sum "$GHOST_NIX_CONFIG_PATH" | awk '{print $1}')"
+before_mode="$(stat -c '%a' "$GHOST_NIX_CONFIG_PATH")"
+set +e
+GHOST_EXECUTOR_TEST_MODE=1 GHOST_FORCE_VALIDATION_FAILURE=1 \
+    "$ROOT/lib/execute" "$rollback_id" >/dev/null 2>&1
+rollback_status=$?
+set -e
+[ "$rollback_status" -eq 16 ]
+after_sha256="$(sha256sum "$GHOST_NIX_CONFIG_PATH" | awk '{print $1}')"
+after_mode="$(stat -c '%a' "$GHOST_NIX_CONFIG_PATH")"
+[ "$before_sha256" = "$after_sha256" ]
+[ "$before_mode" = "$after_mode" ]
+[ "$(jq -r '.status' "$GHOST_PROPOSAL_FILE")" = "approved" ]
+
+credential_tampered="$temporary_root/tampered-credential"
+jq '.token = "not-the-approved-token"' "$GHOST_APPROVAL_CREDENTIAL_FILE" \
+    > "$credential_tampered"
+mv "$credential_tampered" "$GHOST_APPROVAL_CREDENTIAL_FILE"
+set +e
+GHOST_EXECUTOR_TEST_MODE=1 "$ROOT/lib/execute" "$rollback_id" >/dev/null 2>&1
+credential_status=$?
+set -e
+[ "$credential_status" -eq 11 ]
+
+write_fixture
+stale_id="$(ghost_proposal_save \
+    "add jq to configuration.nix" "change" \
+    "Scope. Steps. Risk. Validation. Rollback. Pending review.")"
+"$ROOT/lib/approve" "$stale_id" >/dev/null
+printf '%s\n' '# changed after approval' >> "$GHOST_NIX_CONFIG_PATH"
+set +e
+GHOST_EXECUTOR_TEST_MODE=1 "$ROOT/lib/execute" "$stale_id" >/dev/null 2>&1
+stale_status=$?
+set -e
+[ "$stale_status" -eq 10 ]
+
+write_fixture
+expired_id="$(ghost_proposal_save \
+    "add jq to configuration.nix" "change" \
+    "Scope. Steps. Risk. Validation. Rollback. Pending review.")"
+"$ROOT/lib/approve" "$expired_id" >/dev/null
+expired_proposal="$temporary_root/expired-proposal"
+jq '.approval.expires_epoch = 0' "$GHOST_PROPOSAL_FILE" > "$expired_proposal"
+mv "$expired_proposal" "$GHOST_PROPOSAL_FILE"
+set +e
+GHOST_EXECUTOR_TEST_MODE=1 "$ROOT/lib/execute" "$expired_id" >/dev/null 2>&1
+expired_status=$?
+set -e
+[ "$expired_status" -eq 8 ]
+
+echo "executor fixture tests passed"

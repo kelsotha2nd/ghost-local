@@ -172,3 +172,11 @@ ghost approve <proposal-id>
 Approval never runs a command or edits a file.
 The raw credential is kept in a private mode-0600 state file for internal
 verification, so the user never needs to copy, remember, or repeat it.
+
+The first executor is implemented but remains mechanically production-locked.
+It can only run in explicit fixture-test mode against a configuration beneath
+`/tmp`. The fixture executor supports one operation: adding a verified top-level
+nixpkgs package to `environment.systemPackages`. It verifies approval, digest,
+expiry, credential, and machine fingerprints; creates a private backup; parses
+the edited Nix file; restores the exact original bytes on validation failure;
+records an audit event; prints the diff; and contains no rebuild operation.

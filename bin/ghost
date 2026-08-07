@@ -64,6 +64,10 @@ case "${1:-}" in
         shift
         exec "$ROOT/lib/approve" "$@"
         ;;
+    execute)
+        shift
+        exec "$ROOT/lib/execute" "$@"
+        ;;
     audio)
         exec "$ROOT/lib/audio"
         ;;
@@ -90,6 +94,7 @@ GHOST // COMMANDS
   ghost propose <change> create and save a change proposal
   ghost proposal        review the active proposal
   ghost approve <id>    approve a proposal without executing it
+  ghost execute <id>    execute an approved proposal (production locked)
   ghost audio           inspect audio devices and selection
   ghost benchmark [model] measure local model throughput
   ghost help            show this message
