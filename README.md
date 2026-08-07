@@ -180,3 +180,9 @@ nixpkgs package to `environment.systemPackages`. It verifies approval, digest,
 expiry, credential, and machine fingerprints; creates a private backup; parses
 the edited Nix file; restores the exact original bytes on validation failure;
 records an audit event; prints the diff; and contains no rebuild operation.
+
+`ghost shadow [package]` copies the actual Nix configuration and GHOST module
+into an isolated directory beneath `/tmp`, runs the full approved fixture edit,
+then forces validation failure on a fresh clone and verifies exact rollback. It
+hashes and checks the modes of the source files before and after the run and
+removes the temporary workspace when finished.
