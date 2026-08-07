@@ -17,11 +17,30 @@ if ! command -v pw-record >/dev/null 2>&1; then
 fi
 
 audio_file="$(mktemp --suffix=.wav)"
-trap 'rm -f "$audio_file"' EXIT INT TERM
+record_log="$(mktemp)"
+trap 'rm -f "$audio_file" "$record_log"' EXIT INT TERM
 
 echo "GHOST // LISTENING (${duration}s)" >&2
-if ! pw-record --rate 16000 --channels 1 --format s16 \
-    --sample-count "$((duration * 16000))" "$audio_file"; then
+pw-record --rate 16000 --channels 1 --format s16 \
+    --sample-count "$((duration * 16000))" "$audio_file" \
+    >"$record_log" 2>&1
+record_status=$?
+record_bytes="$(wc -c < "$audio_file" 2>/dev/null || echo 0)"
+
+# PipeWire may return a non-zero status when a bounded sample count closes the
+# stream. A WAV larger than its header is the reliable success condition.
+if (( record_bytes <= 44 )); then
+    [ -s "$record_log" ] && sed 's/^/  /' "$record_log" >&2
+    echo "GHOST // recording failed (pw-record exit $record_status)" >&2
+    echo "GHOST // check the default PipeWire input with: wpctl status" >&2
+    exit 4
+fi
+
+if (( record_status != 0 )); then
+    echo "GHOST // capture closed with audio preserved" >&2
+fi
+
+if [ ! -r "$audio_file" ]; then
     echo "GHOST // recording failed" >&2
     exit 4
 fi
