@@ -199,8 +199,8 @@ digest, credential, expiry, and machine fingerprints. The second command must
 match exactly; casual confirmation is ignored. Voice accepts only the exact
 phrases `execute approved proposal <id>` and `authorize execution <id>`. Passing
 the challenge invokes only the narrow package editor described above. It stops
-after syntax validation with status `executed-awaiting-activation`; activation
-is a separate future capability.
+after syntax validation with status `executed-awaiting-activation`; full
+evaluation and activation remain separate gates.
 
 The normal voice flow hides proposal IDs and combines approval with challenge
 issuance while preserving those internal state transitions:
@@ -227,6 +227,14 @@ same gate for recovery and diagnostics.
 Successful evaluation automatically prepares a separate two-minute system
 activation challenge. Only the exact phrase `authorize system activation`
 consumes it; casual confirmation is ignored. The activation state machine tracks
-the generation before and after a simulated switch and records failure without
-advancing the generation. The real activator remains production-locked and
-contains no `sudo` or `nixos-rebuild` path yet.
+the generation before and after the switch and records the rebuild exit status
+and a private log. Before running, it rechecks the consumed challenge, expiry,
+successful evaluation, and both validated file fingerprints. It targets only
+the exact configured NixOS files and runs one fixed command through normal
+interactive sudo authentication. Success additionally requires a new generation
+and agreement between the system profile and `/run/current-system`. Failure or
+ambiguous state is reported without claiming success. GHOST retains the
+pre-switch generation and reports the explicit NixOS rollback command.
+
+Fixture activation is confined to `/tmp`; the test suite exercises successful
+and failed activation without invoking sudo or changing the live system.

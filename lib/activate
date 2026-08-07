@@ -1,47 +1,128 @@
 #!/usr/bin/env bash
 
+set -o pipefail
+
 SOURCE="${BASH_SOURCE[0]}"
 ROOT="$(cd -P "$(dirname "$SOURCE")/.." >/dev/null 2>&1 && pwd)"
 # shellcheck source=state
 source "$ROOT/lib/state"
 
-if [ "${GHOST_ACTIVATOR_TEST_MODE:-0}" != "1" ]; then
-    echo "GHOST // system activator remains production-locked" >&2
-    exit 30
+proposal_id="${1:-}"
+[ -n "$proposal_id" ] || { echo "usage: ghost activate <proposal-id>" >&2; exit 2; }
+test_mode="${GHOST_ACTIVATOR_TEST_MODE:-0}"
+if [ "$test_mode" = "1" ]; then
+    case "$GHOST_NIX_CONFIG_PATH" in /tmp/*) ;; *) echo "GHOST // activation fixture must live beneath /tmp" >&2; exit 21 ;; esac
+else
+    [ "$GHOST_NIX_CONFIG_PATH" = "$HOME/.config/nixos/configuration.nix" ] &&
+        [ "$GHOST_NIX_GHOST_MODULE_PATH" = "$HOME/.config/nixos/modules/ghost.nix" ] || {
+        echo "GHOST // production activation target mismatch" >&2; exit 20;
+    }
 fi
-case "$GHOST_NIX_CONFIG_PATH" in
-    /tmp/*) ;;
-    *) echo "GHOST // activation fixture must live beneath /tmp" >&2; exit 21 ;;
-esac
+for dependency in date flock jq mktemp mv readlink sha256sum; do
+    command -v "$dependency" >/dev/null 2>&1 || { echo "GHOST // missing dependency: $dependency" >&2; exit 3; }
+done
+if [ "$test_mode" != "1" ]; then
+    for dependency in nixos-rebuild sudo tee; do
+        command -v "$dependency" >/dev/null 2>&1 || { echo "GHOST // missing dependency: $dependency" >&2; exit 3; }
+    done
+fi
+
+generation_number() {
+    local link_target
+    link_target="$(readlink /nix/var/nix/profiles/system 2>/dev/null || true)"
+    if [[ "$link_target" =~ system-([0-9]+)-link$ ]]; then printf '%s\n' "${BASH_REMATCH[1]}"; else printf '%s\n' unknown; fi
+}
 
 ghost_state_init
-proposal_id="${1:-$(jq -r '.id // empty' "$GHOST_PROPOSAL_FILE")}"
-status="$(jq -r '.status // empty' "$GHOST_PROPOSAL_FILE")"
-[ "$status" = "activation-authorized" ] || {
-    echo "GHOST // fixture activation is not authorized" >&2
-    exit 6
+[ -s "$GHOST_PROPOSAL_FILE" ] && [ -s "$GHOST_ACTIVATION_CHALLENGE_FILE" ] || {
+    echo "GHOST // activation state unavailable" >&2; exit 4;
 }
-[ "$proposal_id" = "$(jq -r '.id' "$GHOST_PROPOSAL_FILE")" ] || exit 5
+{
+    flock -x 9
+    stored_id="$(jq -r '.id // empty' "$GHOST_PROPOSAL_FILE")"
+    status="$(jq -r '.status // empty' "$GHOST_PROPOSAL_FILE")"
+    digest="$(jq -r '.digest // empty' "$GHOST_PROPOSAL_FILE")"
+    post_sha256="$(jq -r '.execution.post_sha256 // empty' "$GHOST_PROPOSAL_FILE")"
+    module_sha256="$(jq -r '.machine_fingerprint.ghost_module.sha256 // empty' "$GHOST_PROPOSAL_FILE")"
+    verification="$(jq -r '.verification.result // empty' "$GHOST_PROPOSAL_FILE")"
+    derivation="$(jq -r '.verification.derivation // empty' "$GHOST_PROPOSAL_FILE")"
+    auth_expiry="$(jq -r '.activation_authorization.expires_epoch // 0' "$GHOST_PROPOSAL_FILE")"
+    challenge_id="$(jq -r '.proposal_id // empty' "$GHOST_ACTIVATION_CHALLENGE_FILE")"
+    challenge_digest="$(jq -r '.digest // empty' "$GHOST_ACTIVATION_CHALLENGE_FILE")"
+    challenge_consumed="$(jq -r '.consumed // false' "$GHOST_ACTIVATION_CHALLENGE_FILE")"
+    [ "$proposal_id" = "$stored_id" ] || { echo "GHOST // proposal ID mismatch" >&2; exit 5; }
+    [ "$status" = activation-authorized ] || { echo "GHOST // system activation is not authorized" >&2; exit 6; }
+    [ "$verification" = passed ] && [ -n "$derivation" ] || { echo "GHOST // successful evaluation evidence unavailable" >&2; exit 7; }
+    [ "$proposal_id" = "$challenge_id" ] && [ "$digest" = "$challenge_digest" ] && [ "$challenge_consumed" = true ] || {
+        echo "GHOST // consumed activation challenge binding mismatch" >&2; exit 8;
+    }
+    [ "$(date +%s)" -lt "$auth_expiry" ] || { echo "GHOST // activation authorization expired" >&2; exit 9; }
+    [ "$(ghost_file_fingerprint "$GHOST_NIX_CONFIG_PATH")" = "$post_sha256" ] &&
+        [ "$(ghost_file_fingerprint "$GHOST_NIX_GHOST_MODULE_PATH")" = "$module_sha256" ] || {
+        echo "GHOST // validated files changed; activation refused" >&2; exit 10;
+    }
+    before_generation="${GHOST_TEST_GENERATION_BEFORE:-$(generation_number)}"
+    started_at="$(date --iso-8601=seconds)"
+    temporary="$(mktemp "$GHOST_STATE_DIR/.proposal.XXXXXX")"
+    jq --arg started_at "$started_at" --arg before "$before_generation" \
+        '.status = "activation-running" | .activation = {started_at: $started_at, result: "running", generation_before: $before}' \
+        "$GHOST_PROPOSAL_FILE" > "$temporary"
+    chmod 600 "$temporary"; mv "$temporary" "$GHOST_PROPOSAL_FILE"
+} 9> "$GHOST_STATE_LOCK"
 
-before_generation="${GHOST_TEST_GENERATION_BEFORE:-100}"
-result="${GHOST_TEST_ACTIVATION_RESULT:-success}"
-activated_at="$(date --iso-8601=seconds)"
-temporary="$(mktemp "$GHOST_STATE_DIR/.proposal.XXXXXX")"
-if [ "$result" = "success" ]; then
-    after_generation="$((before_generation + 1))"
-    new_status="fixture-activated"
+activation_log="$GHOST_STATE_DIR/activation-${proposal_id}.log"
+if [ "$test_mode" = 1 ]; then
+    if [ "${GHOST_TEST_ACTIVATION_RESULT:-success}" = success ]; then
+        command_status=0; after_generation="$((before_generation + 1))"
+    else
+        command_status=1; after_generation="$before_generation"
+    fi
 else
-    after_generation="$before_generation"
-    new_status="activation-failed"
+    echo "GHOST // ACTIVATING VALIDATED NIXOS CONFIGURATION"
+    echo "  sudo: normal interactive authentication may be requested"
+    sudo nixos-rebuild switch -I "nixos-config=$GHOST_NIX_CONFIG_PATH" 2>&1 | tee "$activation_log"
+    command_status=${PIPESTATUS[0]}
+    chmod 600 "$activation_log"
+    after_generation="$(generation_number)"
 fi
-jq --arg status "$new_status" --arg activated_at "$activated_at" \
-    --arg result "$result" --arg before "$before_generation" --arg after "$after_generation" \
-    '.status = $status |
-     .activation = {activated_at: $activated_at, result: $result,
-                    generation_before: $before, generation_after: $after}' \
-    "$GHOST_PROPOSAL_FILE" > "$temporary"
-chmod 600 "$temporary"
-mv "$temporary" "$GHOST_PROPOSAL_FILE"
 
-echo "GHOST // FIXTURE ACTIVATION ${result^^}"
-echo "  generation: $before_generation -> $after_generation"
+finished_at="$(date --iso-8601=seconds)"
+result=failed; new_status=activation-failed
+if [ "$command_status" -eq 0 ] && [ "$after_generation" != "$before_generation" ] && [ "$after_generation" != unknown ]; then
+    if [ "$test_mode" = 1 ] || [ "$(readlink -f /run/current-system 2>/dev/null)" = "$(readlink -f /nix/var/nix/profiles/system 2>/dev/null)" ]; then
+        result=passed; new_status=fixture-activated; [ "$test_mode" = 1 ] || new_status=activated
+    else
+        result=generation-changed-current-system-mismatch; new_status=activation-ambiguous
+    fi
+elif [ "$command_status" -eq 0 ]; then
+    result=command-succeeded-generation-unchanged; new_status=activation-ambiguous
+fi
+if [ "$(ghost_file_fingerprint "$GHOST_NIX_CONFIG_PATH")" != "$post_sha256" ] ||
+    [ "$(ghost_file_fingerprint "$GHOST_NIX_GHOST_MODULE_PATH")" != "$module_sha256" ]; then
+    result=validated-files-changed-during-activation; new_status=activation-ambiguous
+fi
+{
+    flock -x 9
+    temporary="$(mktemp "$GHOST_STATE_DIR/.proposal.XXXXXX")"
+    jq --arg status "$new_status" --arg finished_at "$finished_at" --arg result "$result" \
+        --arg before "$before_generation" --arg after "$after_generation" --argjson exit_status "$command_status" --arg log "$activation_log" \
+        '.status = $status | .activation += {finished_at: $finished_at, result: $result, exit_status: $exit_status, generation_before: $before, generation_after: $after, log: $log}' \
+        "$GHOST_PROPOSAL_FILE" > "$temporary"
+    chmod 600 "$temporary"; mv "$temporary" "$GHOST_PROPOSAL_FILE"
+    jq -cn --arg event "$new_status" --arg proposal_id "$proposal_id" --arg finished_at "$finished_at" --arg result "$result" \
+        --arg before "$before_generation" --arg after "$after_generation" --argjson exit_status "$command_status" \
+        '{event: $event, proposal_id: $proposal_id, finished_at: $finished_at, result: $result, exit_status: $exit_status, generation_before: $before, generation_after: $after}' \
+        >> "$GHOST_APPROVAL_AUDIT_FILE"
+} 9> "$GHOST_STATE_LOCK"
+
+if [ "$new_status" = activated ] || [ "$new_status" = fixture-activated ]; then
+    echo "GHOST // SYSTEM ACTIVATION COMPLETE"
+    echo "  generation: $before_generation -> $after_generation"
+    echo "  rollback:   sudo nixos-rebuild switch --rollback"
+    exit 0
+fi
+echo "GHOST // SYSTEM ACTIVATION NOT VERIFIED" >&2
+echo "  result:     $result" >&2
+echo "  generation: $before_generation -> $after_generation" >&2
+echo "  rollback:   sudo nixos-rebuild switch --rollback" >&2
+exit 11

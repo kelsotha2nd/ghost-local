@@ -74,6 +74,10 @@ fi
         >> "$GHOST_APPROVAL_AUDIT_FILE"
 } 9> "$GHOST_STATE_LOCK"
 
-echo "GHOST // SYSTEM ACTIVATION AUTHORIZED — activator remains locked"
+echo "GHOST // SYSTEM ACTIVATION AUTHORIZED"
 echo "  proposal:   $proposal_id"
-echo "  activation: not run"
+if [ "${GHOST_AUTHORIZE_ACTIVATE:-0}" = "1" ]; then
+    echo
+    exec "$ROOT/lib/activate" "$proposal_id"
+fi
+echo "  activation: not run (authorization only)"

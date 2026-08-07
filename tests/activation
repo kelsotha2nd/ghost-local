@@ -47,27 +47,22 @@ casual_status=$?
 set -e
 [ "$casual_status" -eq 64 ]
 
-authorize_output="$("$ROOT/lib/voice-command" "authorize system activation.")"
-[[ "$authorize_output" == *"activator remains locked"* ]]
-[ "$(jq -r '.status' "$GHOST_PROPOSAL_FILE")" = "activation-authorized" ]
-[ "$(jq -r '.consumed' "$GHOST_ACTIVATION_CHALLENGE_FILE")" = "true" ]
-
-set +e
-"$ROOT/lib/activate" "$proposal_id" >/dev/null 2>&1
-locked_status=$?
-set -e
-[ "$locked_status" -eq 30 ]
-
-activation_output="$(GHOST_ACTIVATOR_TEST_MODE=1 \
-    GHOST_TEST_GENERATION_BEFORE=100 "$ROOT/lib/activate" "$proposal_id")"
-[[ "$activation_output" == *"100 -> 101"* ]]
+authorize_output="$(GHOST_ACTIVATOR_TEST_MODE=1 GHOST_TEST_GENERATION_BEFORE=100 \
+    "$ROOT/lib/voice-command" "authorize system activation.")"
+[[ "$authorize_output" == *"SYSTEM ACTIVATION COMPLETE"* ]]
 [ "$(jq -r '.status' "$GHOST_PROPOSAL_FILE")" = "fixture-activated" ]
+[ "$(jq -r '.consumed' "$GHOST_ACTIVATION_CHALLENGE_FILE")" = "true" ]
+[ "$(jq -r '.activation.generation_before' "$GHOST_PROPOSAL_FILE")" = "100" ]
+[ "$(jq -r '.activation.generation_after' "$GHOST_PROPOSAL_FILE")" = "101" ]
 
 write_fixture
 failed_id="$(prepare_activation jq)"
-"$ROOT/lib/authorize-activation" >/dev/null
-GHOST_ACTIVATOR_TEST_MODE=1 GHOST_TEST_ACTIVATION_RESULT=failure \
-    "$ROOT/lib/activate" "$failed_id" >/dev/null
+set +e
+GHOST_AUTHORIZE_ACTIVATE=1 GHOST_ACTIVATOR_TEST_MODE=1 \
+    GHOST_TEST_ACTIVATION_RESULT=failure "$ROOT/lib/authorize-activation" >/dev/null 2>&1
+failure_status=$?
+set -e
+[ "$failure_status" -eq 11 ]
 [ "$(jq -r '.status' "$GHOST_PROPOSAL_FILE")" = "activation-failed" ]
 [ "$(jq -r '.activation.generation_before' "$GHOST_PROPOSAL_FILE")" = \
     "$(jq -r '.activation.generation_after' "$GHOST_PROPOSAL_FILE")" ]

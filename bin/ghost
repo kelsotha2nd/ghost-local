@@ -74,7 +74,11 @@ case "${1:-}" in
         ;;
     authorize)
         shift
-        export GHOST_AUTHORIZE_EXECUTE=1
+        if [ "${1:-}" = "activation" ]; then
+            export GHOST_AUTHORIZE_ACTIVATE=1
+        else
+            export GHOST_AUTHORIZE_EXECUTE=1
+        fi
         exec "$ROOT/lib/authorize" "$@"
         ;;
     shadow)
@@ -88,6 +92,10 @@ case "${1:-}" in
     activation)
         shift
         exec "$ROOT/lib/activation-challenge" "$@"
+        ;;
+    activate)
+        shift
+        exec "$ROOT/lib/activate" "$@"
         ;;
     audio)
         exec "$ROOT/lib/audio"
@@ -121,6 +129,8 @@ GHOST // COMMANDS
   ghost shadow [package] test execution on an isolated config clone
   ghost verify <id>     fully evaluate an executed change without activation
   ghost activation [id] issue a system activation challenge
+  ghost authorize activation authorize and run a challenged activation
+  ghost activate <id>   run an already-authorized activation
   ghost audio           inspect audio devices and selection
   ghost benchmark [model] measure local model throughput
   ghost help            show this message
