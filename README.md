@@ -98,6 +98,7 @@ IDs shown by `ghost audio`.
 
 Voice mode reports capture, transcription, model, synthesis, and playback
 timings. It uses a smaller 128-token response budget and six recent messages
-by default; terminal conversation retains its larger settings. Use
+plus a compact live context by default; terminal conversation retains its full
+machine context and larger settings. Use
 `ghost benchmark` for a repeatable local model throughput measurement before
 and after runtime or acceleration changes.

@@ -6,6 +6,57 @@ ROOT="$(cd -P "$(dirname "$SOURCE")/.." >/dev/null 2>&1 && pwd)"
 source "$ROOT/lib/state"
 ghost_state_init
 
+if [ "${1:-}" = "--compact" ]; then
+    query="${2,,}"
+    echo "=== GHOST ==="
+    echo "Local NixOS workstation intelligence: technical, curious, concise."
+    echo "Protect stability, privacy, security, and user control."
+
+    echo
+    echo "=== DELIBERATE MEMORIES ==="
+    if [ -s "$GHOST_MEMORY_FILE" ] && command -v jq >/dev/null 2>&1; then
+        tail -n 20 "$GHOST_MEMORY_FILE" | jq -r '"- " + .content'
+    else
+        echo "None."
+    fi
+
+    echo
+    echo "=== MACHINE ==="
+    "$ROOT/sensors/memory" | tail -n +2
+
+    echo
+    echo "=== LIVE STATE (AUTHORITATIVE) ==="
+    compact_sensors=(status)
+    add_sensor() {
+        local requested="$1"
+        local existing
+        for existing in "${compact_sensors[@]}"; do
+            [ "$existing" = "$requested" ] && return
+        done
+        compact_sensors=("$requested" "${compact_sensors[@]}")
+    }
+
+    if [[ "$query" =~ (machine|system|status|everything|what.*know|what.*happening) ]]; then
+        compact_sensors=(system resources desktop network storage power nix status)
+    else
+        [[ "$query" =~ (ram|memory|swap) ]] && add_sensor resources
+        [[ "$query" =~ (disk|storage|space|filesystem|nix.*store) ]] && add_sensor storage
+        [[ "$query" =~ (desktop|window|niri|quickshell|wayland) ]] && add_sensor desktop
+        [[ "$query" =~ (network|wifi|wi-fi|ip|vpn|tunnel|connection) ]] && add_sensor network
+        [[ "$query" =~ (battery|power|charging) ]] && add_sensor power
+        [[ "$query" =~ (nix|generation|rebuild|package|configuration) ]] && add_sensor nix
+        [[ "$query" =~ (kernel|uptime|load) ]] && add_sensor system
+    fi
+
+    for sensor in "${compact_sensors[@]}"; do
+        sensor_path="$ROOT/sensors/$sensor"
+        if [ -x "$sensor_path" ]; then
+            "$sensor_path" || echo "${sensor^^}: sensor fault"
+        fi
+    done
+    exit 0
+fi
+
 echo "=== IDENTITY AND BEHAVIOR ==="
 if [ -r "$ROOT/config/personality.md" ]; then
     cat "$ROOT/config/personality.md"

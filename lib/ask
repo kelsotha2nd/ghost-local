@@ -65,7 +65,11 @@ if [ -s "$GHOST_HISTORY_FILE" ]; then
         jq -s '[.[] | {role: .role, content: .content}]')"
 fi
 
-context="$("$ROOT/lib/context")"
+context_args=()
+if [ "${GHOST_CONTEXT_MODE:-full}" = "compact" ]; then
+    context_args+=(--compact)
+fi
+context="$("$ROOT/lib/context" "${context_args[@]}" "$question")"
 system_prompt="${context}
 
 === RESPONSE RULES ===
@@ -74,6 +78,8 @@ and memory. Say when information is unavailable. Be concise unless detail is
 requested. Never claim to have run an action that was not actually performed.
 Treat RAM, swap, filesystem storage, and machine memory as distinct concepts;
 never substitute storage figures for a question about RAM.
+Conversation history is continuity, not evidence about current machine state.
+When history conflicts with LIVE STATE, always use LIVE STATE.
 Protect the machine's privacy, security, reliability, and maintainability.
 Diagnose before proposing changes. Do not treat a request for advice as
 authorization to modify the system, and never mistake capability for permission."
