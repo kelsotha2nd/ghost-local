@@ -10,7 +10,8 @@ export GHOST_SHOW_TIMING=1
 transcript="$("$ROOT/lib/listen" "${1:-}")" || exit $?
 echo "YOU: $transcript"
 
-IFS=$'\t' read -r lane route_reason < <("$ROOT/lib/route" "$transcript") || exit $?
+IFS=$'\t' read -r lane route_reason request_intent < <("$ROOT/lib/route" "$transcript") || exit $?
+export GHOST_REQUEST_INTENT="$request_intent"
 if [ "$lane" = "smart" ]; then
     export GHOST_MODEL_OVERRIDE="${GHOST_SMART_MODEL:-qwen3:8b}"
     export GHOST_MAX_TOKENS="${GHOST_SMART_MAX_TOKENS:-256}"
@@ -24,4 +25,8 @@ else
 fi
 
 printf 'GHOST // ROUTE: %s — %s\n' "${lane^^}" "$route_reason"
+if [[ "$request_intent" = *change ]]; then
+    printf 'GHOST // SAFETY GATE: %s — approval required before execution\n' \
+        "${request_intent^^}"
+fi
 GHOST_SPEAK_RESPONSE=1 exec "$ROOT/lib/ask" "$transcript"

@@ -38,6 +38,7 @@ api_url="${GHOST_API_URL:-http://127.0.0.1:11434/v1/chat/completions}"
 model="${GHOST_MODEL_OVERRIDE:-${GHOST_MODEL:-}}"
 max_tokens="${GHOST_MAX_TOKENS:-384}"
 history_messages="${GHOST_HISTORY_MESSAGES:-12}"
+request_intent="${GHOST_REQUEST_INTENT:-conversation}"
 
 if [ -z "$model" ]; then
     cat >&2 <<'EOF'
@@ -83,6 +84,20 @@ When history conflicts with LIVE STATE, always use LIVE STATE.
 Protect the machine's privacy, security, reliability, and maintainability.
 Diagnose before proposing changes. Do not treat a request for advice as
 authorization to modify the system, and never mistake capability for permission."
+
+case "$request_intent" in
+    inspect)
+        system_prompt="${system_prompt}
+REQUEST INTENT: read-only inspection. Diagnose only from supplied evidence and
+clearly identify any additional checks that would be needed."
+        ;;
+    change|protected-change)
+        system_prompt="${system_prompt}
+REQUEST INTENT: ${request_intent}. No action executor is attached. Explain or
+propose a narrowly scoped plan, but do not claim to have changed anything.
+Explicit user confirmation and validation are required before future execution."
+        ;;
+esac
 
 if [ "${GHOST_SPEAK_RESPONSE:-0}" = "1" ]; then
     system_prompt="${system_prompt}

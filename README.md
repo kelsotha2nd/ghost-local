@@ -115,3 +115,10 @@ reasoning escalate to the smart lane with full context. GHOST prints the selecte
 route before answering. Inspect routing without recording audio using
 `ghost route <request>`, or set `GHOST_VOICE_ROUTE=fast` or `smart` in the ignored
 `config/voice.env` to force a lane temporarily.
+
+Routing also establishes an action boundary. Read-only inspection can proceed
+without approval. Requests to edit, install, rebuild, restart, commit, or
+otherwise change the machine are marked as changes, escalated to the smart lane,
+and stopped at a visible confirmation gate. Destructive requests receive a
+stronger protected-change classification. GHOST does not yet execute these
+plans; this boundary is the contract the future tool runner must enforce.

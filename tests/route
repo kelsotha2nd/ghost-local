@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+ROOT="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." >/dev/null 2>&1 && pwd)"
+
+assert_route() {
+    local expected_lane="$1"
+    local expected_intent="$2"
+    local query="$3"
+    local lane reason intent
+
+    IFS=$'\t' read -r lane reason intent < <("$ROOT/lib/route" "$query")
+    if [ "$lane" != "$expected_lane" ] || [ "$intent" != "$expected_intent" ]; then
+        printf 'route failed: expected %s/%s, got %s/%s: %s\n' \
+            "$expected_lane" "$expected_intent" "$lane" "$intent" "$query" >&2
+        exit 1
+    fi
+}
+
+assert_route fast conversation "hello Ghost"
+assert_route fast inspect "what is my current memory usage?"
+assert_route smart inspect "diagnose why my NixOS rebuild failed"
+assert_route smart change "rebuild my NixOS system"
+assert_route smart change "edit my Nix configuration"
+assert_route smart protected-change "wipe the disk and start over"
+assert_route smart conversation "use the smart model and think carefully"
+
+echo "route tests passed"

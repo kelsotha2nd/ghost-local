@@ -16,6 +16,15 @@ query="$*"
 lower="${query,,}"
 lane="fast"
 reason="conversation"
+intent="conversation"
+
+if [[ "$lower" =~ (wipe|erase|destroy|format[[:space:]]+(the[[:space:]]+)?(disk|drive|filesystem)|factory[[:space:]]+reset|reset[[:space:]]+--hard|delete[[:space:]]+(all|every|the[[:space:]]+system)) ]]; then
+    intent="protected-change"
+elif [[ "$lower" =~ (fix|repair|implement|refactor|configure|rollback|restore|install|uninstall|remove|upgrade|update|deploy|commit|push|create|edit|modify|change|restart|enable|disable|rebuild[[:space:]]+(my|the|this|nixos|system|machine|configuration)|run[[:space:]]+(a[[:space:]]+)?rebuild|write[[:space:]]+(a|the|some)?[[:space:]]*(code|script|module|config)) ]]; then
+    intent="change"
+elif [[ "$lower" =~ (check|inspect|show|list|status|diagnos|debug|troubleshoot|investigat|analy[sz]e|audit|explain|why[[:space:]]|what[[:space:]]+is|how[[:space:]]+much) ]]; then
+    intent="inspect"
+fi
 
 case "$mode" in
     fast|smart)
@@ -23,7 +32,10 @@ case "$mode" in
         reason="manual override"
         ;;
     auto)
-        if [[ "$lower" =~ (smart[[:space:]]+mode|use[[:space:]]+(the[[:space:]]+)?(smart|bigger|8b)[[:space:]]+model|think[[:space:]]+(hard|carefully|deeply)|take[[:space:]]+your[[:space:]]+time) ]]; then
+        if [[ "$intent" = "change" || "$intent" = "protected-change" ]]; then
+            lane="smart"
+            reason="machine action"
+        elif [[ "$lower" =~ (smart[[:space:]]+mode|use[[:space:]]+(the[[:space:]]+)?(smart|bigger|8b)[[:space:]]+model|think[[:space:]]+(hard|carefully|deeply)|take[[:space:]]+your[[:space:]]+time) ]]; then
             lane="smart"
             reason="explicit request"
         elif [[ "$lower" =~ (fix|debug|diagnos|troubleshoot|investigat|repair|implement|refactor|configure|rebuild|rollback|restore|install|uninstall|upgrade|deploy|commit|push|audit|secure|optimi[sz]e|benchmark|plan|design|create|edit|modify|change|write[[:space:]]+(a|the|some)?[[:space:]]*(code|script|module|config)) ]]; then
@@ -49,8 +61,13 @@ if (( display )); then
     else
         model="${GHOST_VOICE_MODEL:-qwen3:4b-instruct}"
     fi
-    printf 'GHOST // ROUTE: %s — %s\n  model: %s\n' \
-        "${lane^^}" "$reason" "$model"
+    case "$intent" in
+        change) gate="confirmation required" ;;
+        protected-change) gate="explicit confirmation + validation" ;;
+        *) gate="none" ;;
+    esac
+    printf 'GHOST // ROUTE: %s — %s\n  model:  %s\n  intent: %s\n  gate:   %s\n' \
+        "${lane^^}" "$reason" "$model" "$intent" "$gate"
 else
-    printf '%s\t%s\n' "$lane" "$reason"
+    printf '%s\t%s\t%s\n' "$lane" "$reason" "$intent"
 fi
