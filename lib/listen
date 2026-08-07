@@ -34,6 +34,8 @@ if [ -n "${GHOST_AUDIO_SOURCE:-}" ]; then
     record_args+=(--target "$GHOST_AUDIO_SOURCE")
 fi
 
+capture_started="$(date +%s%3N)"
+
 if [ -n "$duration" ]; then
     echo "GHOST // LISTENING (${duration}s)" >&2
     pw-record "${record_args[@]}" \
@@ -58,6 +60,7 @@ else
     record_status=$?
 fi
 record_bytes="$(wc -c < "$audio_file" 2>/dev/null || echo 0)"
+capture_finished="$(date +%s%3N)"
 
 # PipeWire may return a non-zero status when a bounded sample count closes the
 # stream. A WAV larger than its header is the reliable success condition.
@@ -78,4 +81,14 @@ if [ ! -r "$audio_file" ]; then
 fi
 
 echo "GHOST // TRANSCRIBING" >&2
-"$ROOT/lib/transcribe" "$audio_file"
+transcribe_started="$(date +%s%3N)"
+transcript="$("$ROOT/lib/transcribe" "$audio_file")" || exit $?
+transcribe_finished="$(date +%s%3N)"
+
+if [ "${GHOST_SHOW_TIMING:-0}" = "1" ]; then
+    echo "GHOST // TIMING" >&2
+    printf '  capture:    %.1fs\n' "$((capture_finished - capture_started))e-3" >&2
+    printf '  transcribe: %.1fs\n' "$((transcribe_finished - transcribe_started))e-3" >&2
+fi
+
+printf '%s\n' "$transcript"

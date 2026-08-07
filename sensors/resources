@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+
+echo "RESOURCES:"
+
+read -r _ ram_total ram_used _ _ _ ram_available < <(free -h | awk '/^Mem:/ {print}')
+read -r _ swap_total swap_used _ < <(free -h | awk '/^Swap:/ {print}')
+
+if [ -n "${ram_total:-}" ]; then
+    echo "  ram:       $ram_used / $ram_total used"
+    echo "  available: $ram_available"
+else
+    echo "  ram:       unknown"
+fi
+
+if [ -n "${swap_total:-}" ]; then
+    echo "  swap:      $swap_used / $swap_total used"
+else
+    echo "  swap:      unknown"
+fi

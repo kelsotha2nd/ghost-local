@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+
+SOURCE="${BASH_SOURCE[0]}"
+ROOT="$(cd -P "$(dirname "$SOURCE")/.." >/dev/null 2>&1 && pwd)"
+SYSTEM_MODEL_CONFIG="/etc/ghost/model.env"
+MODEL_CONFIG="$ROOT/config/model.env"
+
+if [ -r "$SYSTEM_MODEL_CONFIG" ]; then
+    # shellcheck source=/dev/null
+    source "$SYSTEM_MODEL_CONFIG"
+fi
+if [ -r "$MODEL_CONFIG" ]; then
+    # shellcheck source=/dev/null
+    source "$MODEL_CONFIG"
+fi
+
+for dependency in curl jq; do
+    if ! command -v "$dependency" >/dev/null 2>&1; then
+        echo "GHOST // missing dependency: $dependency" >&2
+        exit 3
+    fi
+done
+
+model="${GHOST_MODEL:-}"
+if [ -z "$model" ]; then
+    echo "GHOST // model not configured" >&2
+    exit 3
+fi
+
+base_url="${GHOST_API_URL:-http://127.0.0.1:11434/v1/chat/completions}"
+base_url="${base_url%%/v1/*}"
+payload="$(jq -n --arg model "$model" '{
+    model: $model,
+    prompt: "In exactly two short sentences, explain why measured evidence matters when maintaining a NixOS workstation.",
+    stream: false,
+    keep_alive: "10m",
+    options: {num_predict: 64, temperature: 0}
+}')"
+
+echo "GHOST // MODEL BENCHMARK"
+echo "  model: $model"
+response="$(curl --silent --show-error --fail --max-time 180 \
+    -H "Content-Type: application/json" --data "$payload" \
+    "$base_url/api/generate")" || {
+        echo "GHOST // benchmark request failed" >&2
+        exit 4
+    }
+
+jq -r '
+    def seconds: . / 1000000000;
+    "  load:       \((.load_duration | seconds))s",
+    "  prompt:     \(.prompt_eval_count) tokens at \((.prompt_eval_count / (.prompt_eval_duration | seconds)) * 10 | round / 10) tok/s",
+    "  generation: \(.eval_count) tokens at \((.eval_count / (.eval_duration | seconds)) * 10 | round / 10) tok/s",
+    "  total:      \((.total_duration | seconds))s"
+' <<< "$response"
+
+if command -v ollama >/dev/null 2>&1; then
+    ollama ps 2>/dev/null | awk 'NR == 2 {print "  processor:  " $5 " " $6}'
+fi

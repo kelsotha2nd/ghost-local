@@ -2,6 +2,12 @@
 
 SOURCE="${BASH_SOURCE[0]}"
 ROOT="$(cd -P "$(dirname "$SOURCE")/.." >/dev/null 2>&1 && pwd)"
+# shellcheck source=voice-config
+source "$ROOT/lib/voice-config"
+
+export GHOST_SHOW_TIMING=1
+export GHOST_MAX_TOKENS="${GHOST_VOICE_MAX_TOKENS:-128}"
+export GHOST_HISTORY_MESSAGES="${GHOST_VOICE_HISTORY_MESSAGES:-6}"
 
 transcript="$("$ROOT/lib/listen" "${1:-}")" || exit $?
 echo "YOU: $transcript"

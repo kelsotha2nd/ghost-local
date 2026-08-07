@@ -9,7 +9,7 @@ It is not an operating system or a general-purpose AI framework.
 ## Current state
 
 - Bash runtime
-- System, desktop, network, storage, power, memory, and Nix sensors
+- System, RAM/swap, desktop, network, storage, power, memory, and Nix sensors
 - Local condition reporting for storage, battery, and system load
 - Machine-specific memory
 - Grounded model conversations through `ghost ask`
@@ -95,3 +95,9 @@ the answer locally. The initial Piper voice is a reference voice intended for
 testing; it is not GHOST's permanent voice identity. A specific PipeWire input
 or output can be selected in ignored `config/voice.env` using the node names or
 IDs shown by `ghost audio`.
+
+Voice mode reports capture, transcription, model, synthesis, and playback
+timings. It uses a smaller 128-token response budget and six recent messages
+by default; terminal conversation retains its larger settings. Use
+`ghost benchmark` for a repeatable local model throughput measurement before
+and after runtime or acceleration changes.

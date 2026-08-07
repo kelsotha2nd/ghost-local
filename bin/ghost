@@ -48,6 +48,9 @@ case "${1:-}" in
     audio)
         exec "$ROOT/lib/audio"
         ;;
+    benchmark)
+        exec "$ROOT/lib/benchmark"
+        ;;
     help|-h|--help)
         cat <<'EOF'
 GHOST // COMMANDS
@@ -63,6 +66,7 @@ GHOST // COMMANDS
   ghost speak <text>    speak text through the local voice
   ghost voice [seconds] push-to-talk, answer, and speak
   ghost audio           inspect audio devices and selection
+  ghost benchmark       measure local model throughput
   ghost help            show this message
 EOF
         exit 0
@@ -86,7 +90,7 @@ echo "  user: $(whoami)"
 echo "  host: $(hostname)"
 echo
 
-for sensor in system desktop network storage power nix memory status; do
+for sensor in system resources desktop network storage power nix memory status; do
     sensor_path="$ROOT/sensors/$sensor"
 
     if [ -x "$sensor_path" ]; then

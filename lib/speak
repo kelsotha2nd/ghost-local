@@ -30,14 +30,26 @@ fi
 audio_file="$(mktemp --suffix=.wav)"
 trap 'rm -f "$audio_file"' EXIT INT TERM
 
+synthesis_started="$(date +%s%3N)"
 if ! piper --model "$GHOST_PIPER_MODEL" --config "$GHOST_PIPER_CONFIG" \
     --output-file "$audio_file" -- "$text" >/dev/null; then
     echo "GHOST // speech synthesis failed" >&2
     exit 4
 fi
+synthesis_finished="$(date +%s%3N)"
 
 play_args=()
 if [ -n "${GHOST_AUDIO_SINK:-}" ]; then
     play_args+=(--target "$GHOST_AUDIO_SINK")
 fi
+play_started="$(date +%s%3N)"
 pw-play "${play_args[@]}" "$audio_file"
+play_status=$?
+play_finished="$(date +%s%3N)"
+
+if [ "${GHOST_SHOW_TIMING:-0}" = "1" ]; then
+    printf '  synthesis:  %.1fs\n' "$((synthesis_finished - synthesis_started))e-3" >&2
+    printf '  playback:   %.1fs\n' "$((play_finished - play_started))e-3" >&2
+fi
+
+exit "$play_status"

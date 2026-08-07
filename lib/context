@@ -32,7 +32,7 @@ fi
 echo
 echo "=== LIVE MACHINE STATE ==="
 echo "Observed: $(date --iso-8601=seconds)"
-for sensor in system desktop network storage power nix status; do
+for sensor in system resources desktop network storage power nix status; do
     sensor_path="$ROOT/sensors/$sensor"
     if [ -x "$sensor_path" ]; then
         "$sensor_path" || echo "${sensor^^}: sensor fault"

@@ -72,6 +72,8 @@ system_prompt="${context}
 Answer as GHOST. Ground claims about the machine only in the supplied live state
 and memory. Say when information is unavailable. Be concise unless detail is
 requested. Never claim to have run an action that was not actually performed.
+Treat RAM, swap, filesystem storage, and machine memory as distinct concepts;
+never substitute storage figures for a question about RAM.
 Protect the machine's privacy, security, reliability, and maintainability.
 Diagnose before proposing changes. Do not treat a request for advice as
 authorization to modify the system, and never mistake capability for permission."
@@ -102,6 +104,7 @@ printf 'GHOST:\n'
 
 answer_file="$(mktemp)"
 trap 'rm -f "$answer_file"' EXIT
+model_started="$(date +%s%3N)"
 
 curl --silent --show-error --fail-with-body --no-buffer \
     --max-time "${GHOST_API_TIMEOUT:-120}" \
@@ -113,6 +116,7 @@ curl --silent --show-error --fail-with-body --no-buffer \
         jq -jr '.choices[0].delta.content // empty' <<< "$event" 2>/dev/null
     done | tee "$answer_file"
 pipeline_status=("${PIPESTATUS[@]}")
+model_finished="$(date +%s%3N)"
 printf '\n'
 
 if (( pipeline_status[0] != 0 )); then
@@ -138,6 +142,10 @@ fi
 
 ghost_history_append "user" "$question"
 ghost_history_append "assistant" "$answer"
+
+if [ "${GHOST_SHOW_TIMING:-0}" = "1" ]; then
+    printf '  model:      %.1fs\n' "$((model_finished - model_started))e-3" >&2
+fi
 
 if [ "${GHOST_SPEAK_RESPONSE:-0}" = "1" ]; then
     "$ROOT/lib/speak" "$answer" || echo "GHOST // spoken output failed" >&2

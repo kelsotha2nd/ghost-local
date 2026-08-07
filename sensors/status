@@ -5,6 +5,18 @@ echo "  core active"
 
 observations=()
 
+read -r memory_total memory_available < <(
+    awk '
+        /^MemTotal:/ {total=$2}
+        /^MemAvailable:/ {available=$2}
+        END {print total, available}
+    ' /proc/meminfo
+)
+if [[ "$memory_total" =~ ^[0-9]+$ ]] && [[ "$memory_available" =~ ^[0-9]+$ ]] &&
+   (( memory_available * 100 / memory_total <= 10 )); then
+    observations+=("memory pressure; $((memory_available / 1024)) MiB available")
+fi
+
 root_percent="$(df -P / 2>/dev/null | awk 'NR == 2 {gsub(/%/, "", $5); print $5}')"
 if [[ "$root_percent" =~ ^[0-9]+$ ]] && (( root_percent >= 85 )); then
     observations+=("storage pressure at ${root_percent}%")
