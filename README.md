@@ -57,4 +57,6 @@ ghost ask "what is happening on this machine?"
 The default URL targets an Ollama-compatible local endpoint. `config/model.env`
 is ignored by Git because it may contain credentials. Use `ghost context` to
 inspect the exact personality, memory, and live machine state supplied to the
-model. Conversation currently requires `curl` and `jq`.
+model. Conversation currently requires `curl` and `jq`. On NixOS, GHOST first
+reads declarative model settings from `/etc/ghost/model.env`; the repo-local
+configuration remains an optional override.
