@@ -22,8 +22,11 @@ if [[ "$command" =~ ^(ghost[,[:space:]]+)?(cancel[[:space:]]+(the[[:space:]]+)?c
 fi
 
 if [[ "$command" =~ ^(ghost[,[:space:]]+)?work[[:space:]]+on[[:space:]]+ghost:[[:space:]]+(.+)$ ]]; then
-    "$ROOT/lib/task" start "${BASH_REMATCH[2]}"
-    exit $?
+    "$ROOT/lib/task" start "${BASH_REMATCH[2]}" || exit $?
+    if [ "${GHOST_VOICE_COMMAND_SPEAK:-0}" = "1" ]; then
+        "$ROOT/lib/speak" "Task accepted. I am working in the background. Ask what I am working on at any time." || true
+    fi
+    exit 0
 fi
 
 if [[ "$command" =~ ^(ghost[,[:space:]]+)?authorize[[:space:]]+prepared[[:space:]]+patch$ ]]; then

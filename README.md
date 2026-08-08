@@ -385,6 +385,12 @@ result, passes that evidence into the isolated patch loop, and remains attached
 to the resulting reviewed patch. Only one task can be active at a time, so a
 second request cannot silently compete with or replace the first.
 
+Normal task starts return immediately after launching a transient user service.
+The worker runs at reduced CPU scheduling priority and weight, so voice and the
+desktop remain favored while local inference is busy. Its unit name is recorded
+in private task state; status remains available from another terminal, and
+cancellation stops both the verified heavy workload and that exact user unit.
+
 The conversational equivalents are deliberately narrow: `work on Ghost:
 <request>`, `what are you working on`, `continue current task`, and `cancel the
 current task`. You never need to repeat a generated ID. Continue reviews a
