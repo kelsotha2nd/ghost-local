@@ -358,3 +358,21 @@ for one corrected attempt. The corrected patch must pass the same context/path,
 apply, and full-test gates; feedback never broadens its file authority. Only the
 final passing diff is saved and challenged for application. The attempt count is
 recorded with the prepared patch, and the limit can never exceed three.
+
+## Workload governor
+
+Heavy local work is serialized by a private, nonblocking workload lock. Smart
+model answers and the complete patch preparation/revision job check live
+available memory, one-minute load relative to CPU count, and battery state before
+starting. Defaults require at least 2 GiB and 15 percent memory available, defer
+above twice the CPU-count load, and refuse an unplugged battery at or below 20
+percent. A rejected or overlapping job exits instead of silently competing for
+Ollama and CPU time; the fast voice lane does not take the heavy lock.
+
+`ghost workload status` reports the owning task, PID, start time, and resource
+snapshot. Status binds both PID and Linux process-start ticks so stale PID reuse
+cannot impersonate a job. `ghost workload cancel` verifies the recorded process
+still belongs to the current user with the same start identity before requesting
+TERM. EXIT handlers release the lock, remove status, and—in patch preparation—
+remove the isolated worktree. `ghost workload check` exposes the current
+admission decision without launching a model.

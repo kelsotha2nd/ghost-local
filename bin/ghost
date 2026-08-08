@@ -111,6 +111,10 @@ case "${1:-}" in
         shift
         exec "$ROOT/lib/project" "$@"
         ;;
+    workload)
+        shift
+        exec "$ROOT/lib/workload" "$@"
+        ;;
     audio)
         exec "$ROOT/lib/audio"
         ;;
@@ -155,6 +159,9 @@ GHOST // COMMANDS
   ghost project prepare <change> create and test an isolated AI patch
   ghost project patch   review the latest prepared patch
   ghost project apply   authorize and apply the prepared patch
+  ghost workload status inspect the heavy-job governor
+  ghost workload check  check resources for heavy local work
+  ghost workload cancel request cancellation of the active heavy job
   ghost audio           inspect audio devices and selection
   ghost benchmark [model] measure local model throughput
   ghost help            show this message

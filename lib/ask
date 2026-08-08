@@ -4,6 +4,8 @@ SOURCE="${BASH_SOURCE[0]}"
 ROOT="$(cd -P "$(dirname "$SOURCE")/.." >/dev/null 2>&1 && pwd)"
 # shellcheck source=state
 source "$ROOT/lib/state"
+# shellcheck source=workload
+source "$ROOT/lib/workload"
 SYSTEM_MODEL_CONFIG="/etc/ghost/model.env"
 MODEL_CONFIG="$ROOT/config/model.env"
 
@@ -150,7 +152,12 @@ printf 'GHOST:\n'
 
 answer_file="$(mktemp)"
 finish_file="$(mktemp)"
-trap 'rm -f "$answer_file" "$finish_file"' EXIT
+workload_acquired=0
+trap 'rm -f "$answer_file" "$finish_file"; [ "$workload_acquired" -eq 1 ] && ghost_workload_release' EXIT
+if [ "${GHOST_WORKLOAD_CLASS:-}" = heavy ] || [ "$model" = "${GHOST_SMART_MODEL:-qwen3:8b}" ]; then
+    ghost_workload_acquire smart-model "${question:0:120}" || exit $?
+    workload_acquired=1
+fi
 model_started="$(date +%s%3N)"
 
 curl --silent --show-error --fail-with-body --no-buffer \

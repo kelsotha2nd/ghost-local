@@ -25,6 +25,7 @@ fi
 IFS=$'\t' read -r lane route_reason request_intent < <("$ROOT/lib/route" "$transcript") || exit $?
 export GHOST_REQUEST_INTENT="$request_intent"
 if [ "$lane" = "smart" ]; then
+    export GHOST_WORKLOAD_CLASS=heavy
     export GHOST_MODEL_OVERRIDE="${GHOST_SMART_MODEL:-qwen3:8b}"
     export GHOST_MAX_TOKENS="${GHOST_SMART_MAX_TOKENS:-256}"
     export GHOST_HISTORY_MESSAGES="${GHOST_SMART_HISTORY_MESSAGES:-12}"

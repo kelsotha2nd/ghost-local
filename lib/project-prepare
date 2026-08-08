@@ -4,6 +4,8 @@ set -o pipefail
 SOURCE="${BASH_SOURCE[0]}"; ROOT="$(cd -P "$(dirname "$SOURCE")/.." >/dev/null 2>&1 && pwd)"
 # shellcheck source=state
 source "$ROOT/lib/state"
+# shellcheck source=workload
+source "$ROOT/lib/workload"
 project_root="${1:-}"; shift || true; request="$*"
 [ -n "$project_root" ] && [ -n "$request" ] || { echo "usage: ghost project prepare <change>" >&2; exit 2; }
 project_root="$(git -C "$project_root" rev-parse --show-toplevel 2>/dev/null || true)"; [ -n "$project_root" ] || exit 4
@@ -14,11 +16,12 @@ manifest="$project_root/.ghost/project.json"
 [ -f "$manifest" ] && [ ! -L "$manifest" ] && [ "$(jq -cS '.test' "$manifest")" = '["./tests/run"]' ] || { echo "GHOST // trusted project test contract unavailable" >&2; exit 7; }
 [ -z "$(git -C "$project_root" status --porcelain=v1)" ] || { echo "GHOST // active checkout must be clean before isolated preparation" >&2; exit 8; }
 head_commit="$(git -C "$project_root" rev-parse HEAD)"
-ghost_state_init
+ghost_state_init; ghost_workload_acquire project-patch "$request" || exit $?
 worktree="$(mktemp -d /tmp/ghost-project-worktree.XXXXXX)"; context_file="$(mktemp /tmp/ghost-project-context.XXXXXX)"
 cleanup() {
     case "$worktree" in /tmp/ghost-project-worktree.*) git -C "$project_root" worktree remove --force "$worktree" >/dev/null 2>&1 || true ;; esac
     rm -f "$context_file"
+    ghost_workload_release
 }
 trap cleanup EXIT
 git -C "$project_root" worktree add --detach "$worktree" "$head_commit" >/dev/null || { echo "GHOST // isolated worktree creation failed" >&2; exit 9; }

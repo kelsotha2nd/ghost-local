@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+
+GHOST_WORKLOAD_SOURCE="${BASH_SOURCE[0]}"
+GHOST_WORKLOAD_ROOT="$(cd -P "$(dirname "$GHOST_WORKLOAD_SOURCE")/.." >/dev/null 2>&1 && pwd)"
+# shellcheck source=state
+source "$GHOST_WORKLOAD_ROOT/lib/state"
+GHOST_WORKLOAD_STATUS_FILE="$GHOST_STATE_DIR/workload.json"
+GHOST_WORKLOAD_LOCK_FILE="$GHOST_STATE_DIR/workload.lock"
+
+ghost_workload_snapshot() {
+    local total available load cpus battery="unavailable" supply
+    read -r total available < <(awk '/^MemTotal:/ {t=$2} /^MemAvailable:/ {a=$2} END {print t,a}' /proc/meminfo)
+    read -r load _ < /proc/loadavg; cpus="$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 1)"
+    for supply in /sys/class/power_supply/*; do
+        [ -r "$supply/type" ] && [ "$(<"$supply/type")" = Battery ] || continue
+        battery="$(<"$supply/capacity")% $(<"$supply/status")"; break
+    done
+    jq -cn --argjson memory_total_kib "${total:-0}" --argjson memory_available_kib "${available:-0}" \
+        --arg load_1m "${load:-0}" --argjson cpus "${cpus:-1}" --arg battery "$battery" \
+        '{memory_total_kib:$memory_total_kib,memory_available_kib:$memory_available_kib,load_1m:$load_1m,cpus:$cpus,battery:$battery}'
+}
+
+ghost_workload_check() {
+    [ "${GHOST_WORKLOAD_IGNORE_PRESSURE:-0}" = 1 ] && return 0
+    local snapshot total available load cpus min_percent min_kib
+    snapshot="$(ghost_workload_snapshot)"; total="$(jq -r .memory_total_kib <<< "$snapshot")"; available="$(jq -r .memory_available_kib <<< "$snapshot")"
+    load="$(jq -r .load_1m <<< "$snapshot")"; cpus="$(jq -r .cpus <<< "$snapshot")"
+    min_percent="${GHOST_WORKLOAD_MIN_MEMORY_PERCENT:-15}"; min_kib="${GHOST_WORKLOAD_MIN_MEMORY_KIB:-2097152}"
+    if [ "$available" -lt "$min_kib" ] || [ "$((available * 100 / total))" -lt "$min_percent" ]; then
+        echo "GHOST // heavy workload deferred: memory pressure" >&2; return 20
+    fi
+    awk -v current_load="$load" -v cpus="$cpus" -v factor="${GHOST_WORKLOAD_MAX_LOAD_FACTOR:-2.0}" 'BEGIN {exit !(current_load > cpus * factor)}' && {
+        echo "GHOST // heavy workload deferred: system load is elevated" >&2; return 21;
+    }
+    for supply in /sys/class/power_supply/*; do
+        [ -r "$supply/type" ] && [ "$(<"$supply/type")" = Battery ] || continue
+        capacity="$(<"$supply/capacity")"; charging="$(<"$supply/status")"
+        if [ "$capacity" -le "${GHOST_WORKLOAD_MIN_BATTERY_PERCENT:-20}" ] && [ "$charging" != Charging ]; then
+            echo "GHOST // heavy workload deferred: battery is low" >&2; return 22
+        fi
+        break
+    done
+}
+
+ghost_workload_acquire() {
+    local kind="$1" label="$2" temporary started_at start_ticks snapshot
+    ghost_state_init; ghost_workload_check || return $?
+    exec 8> "$GHOST_WORKLOAD_LOCK_FILE"
+    flock -n 8 || { echo "GHOST // heavy workload already active" >&2; return 23; }
+    started_at="$(date --iso-8601=seconds)"; start_ticks="$(awk '{print $22}' "/proc/$$/stat")"; snapshot="$(ghost_workload_snapshot)"
+    temporary="$(mktemp "$GHOST_STATE_DIR/.workload.XXXXXX")"
+    jq -n --arg kind "$kind" --arg label "$label" --arg started_at "$started_at" --argjson pid "$$" \
+        --arg start_ticks "$start_ticks" --argjson resources "$snapshot" \
+        '{status:"running",kind:$kind,label:$label,pid:$pid,process_start_ticks:$start_ticks,started_at:$started_at,resources:$resources}' > "$temporary"
+    chmod 600 "$temporary"; mv "$temporary" "$GHOST_WORKLOAD_STATUS_FILE"; GHOST_WORKLOAD_ACQUIRED=1
+}
+
+ghost_workload_release() {
+    [ "${GHOST_WORKLOAD_ACQUIRED:-0}" = 1 ] || return 0
+    if [ -s "$GHOST_WORKLOAD_STATUS_FILE" ] && [ "$(jq -r '.pid // 0' "$GHOST_WORKLOAD_STATUS_FILE")" = "$$" ]; then
+        rm -f "$GHOST_WORKLOAD_STATUS_FILE"
+    fi
+    flock -u 8 2>/dev/null || true; exec 8>&-; GHOST_WORKLOAD_ACQUIRED=0
+}
+
+ghost_workload_status() {
+    ghost_state_init
+    if [ ! -s "$GHOST_WORKLOAD_STATUS_FILE" ]; then echo "GHOST // WORKLOAD: idle"; return 0; fi
+    pid="$(jq -r '.pid // 0' "$GHOST_WORKLOAD_STATUS_FILE")"; ticks="$(jq -r '.process_start_ticks // empty' "$GHOST_WORKLOAD_STATUS_FILE")"
+    if [ ! -r "/proc/$pid/stat" ] || [ "$(awk '{print $22}' "/proc/$pid/stat")" != "$ticks" ]; then
+        rm -f "$GHOST_WORKLOAD_STATUS_FILE"; echo "GHOST // WORKLOAD: idle (stale state cleared)"; return 0
+    fi
+    jq -r '"GHOST // WORKLOAD: \(.status)\n  kind: \(.kind)\n  task: \(.label)\n  pid: \(.pid)\n  started: \(.started_at)\n  memory at start: \((.resources.memory_available_kib / 1024 | floor)) MiB available\n  load at start: \(.resources.load_1m)"' "$GHOST_WORKLOAD_STATUS_FILE"
+}
+
+ghost_workload_cancel() {
+    ghost_state_init; [ -s "$GHOST_WORKLOAD_STATUS_FILE" ] || { echo "GHOST // no active heavy workload" >&2; return 4; }
+    pid="$(jq -r '.pid // 0' "$GHOST_WORKLOAD_STATUS_FILE")"; ticks="$(jq -r '.process_start_ticks // empty' "$GHOST_WORKLOAD_STATUS_FILE")"
+    [ -r "/proc/$pid/status" ] && [ "$(awk '/^Uid:/ {print $2}' "/proc/$pid/status")" = "$(id -u)" ] &&
+        [ "$(awk '{print $22}' "/proc/$pid/stat")" = "$ticks" ] || { echo "GHOST // workload identity mismatch; cancellation refused" >&2; return 5; }
+    kill -TERM "$pid" || return 6
+    echo "GHOST // cancellation requested for workload pid $pid"
+}
+
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+    case "${1:-status}" in
+        status) ghost_workload_status ;;
+        check) ghost_workload_check && { echo "GHOST // heavy workload resources available"; ghost_workload_snapshot | jq .; } ;;
+        cancel) ghost_workload_cancel ;;
+        *) echo "usage: ghost workload <status|check|cancel>" >&2; exit 2 ;;
+    esac
+fi

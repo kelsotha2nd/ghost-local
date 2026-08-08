@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+ROOT="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." >/dev/null 2>&1 && pwd)"
+temporary_root="$(mktemp -d /tmp/ghost-workload-test.XXXXXX)"; trap 'rm -r "$temporary_root"' EXIT
+export GHOST_STATE_DIR="$temporary_root/state"
+ready="$temporary_root/ready"; hold="$temporary_root/hold"; touch "$hold"
+GHOST_STATE_DIR="$GHOST_STATE_DIR" "$ROOT/tests/fixtures/workload-holder" "$ROOT" "$ready" "$hold" &
+holder_pid=$!
+for _ in $(seq 1 50); do [ -e "$ready" ] && break; sleep 0.05; done
+[ -e "$ready" ]
+status_output="$("$ROOT/lib/workload" status)"
+[[ "$status_output" == *'WORKLOAD: running'* ]]
+[[ "$status_output" == *'fixture heavy job'* ]]
+set +e
+GHOST_WORKLOAD_IGNORE_PRESSURE=1 bash -c 'source "$1/lib/workload"; ghost_workload_acquire second second' _ "$ROOT" >/dev/null 2>&1
+busy_status=$?
+set -e
+[ "$busy_status" -eq 23 ]
+cancel_output="$("$ROOT/lib/workload" cancel)"
+[[ "$cancel_output" == *'cancellation requested'* ]]
+wait "$holder_pid" 2>/dev/null || true
+[ "$("$ROOT/lib/workload" status)" = 'GHOST // WORKLOAD: idle' ]
+
+set +e
+GHOST_WORKLOAD_MIN_MEMORY_KIB=999999999999 "$ROOT/lib/workload" check >/dev/null 2>&1
+pressure_status=$?
+set -e
+[ "$pressure_status" -eq 20 ]
+
+echo "workload tests passed"

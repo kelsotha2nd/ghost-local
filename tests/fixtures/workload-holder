@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+
+set -e
+ROOT="${1:?}"; ready="${2:?}"; hold="${3:?}"
+# shellcheck source=../../lib/workload
+source "$ROOT/lib/workload"
+GHOST_WORKLOAD_IGNORE_PRESSURE=1 ghost_workload_acquire fixture 'fixture heavy job'
+trap 'ghost_workload_release' EXIT
+trap 'exit 143' TERM INT
+touch "$ready"
+while [ -e "$hold" ]; do sleep 0.1; done
