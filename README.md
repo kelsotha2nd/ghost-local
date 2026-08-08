@@ -390,6 +390,12 @@ The worker runs at reduced CPU scheduling priority and weight, so voice and the
 desktop remain favored while local inference is busy. Its unit name is recorded
 in private task state; status remains available from another terminal, and
 cancellation stops both the verified heavy workload and that exact user unit.
+Worker output is also retained in a private per-task log rather than depending
+on transient journal retention. `ghost task result` summarizes the outcome and
+`ghost task log` exposes the bounded recent details. GHOST records every ready
+or failed completion in task state and sends a desktop notification when a
+compatible `notify-send` command is installed; notification availability never
+affects task success.
 
 The conversational equivalents are deliberately narrow: `work on Ghost:
 <request>`, `what are you working on`, `continue current task`, and `cancel the

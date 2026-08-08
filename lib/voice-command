@@ -6,9 +6,39 @@ transcript="$*"
 command="${transcript,,}"
 command="${command%[.!?]}"
 
-if [[ "$command" =~ ^(ghost[,[:space:]]+)?(what[[:space:]]+are[[:space:]]+you[[:space:]]+working[[:space:]]+on|task[[:space:]]+status)$ ]]; then
-    "$ROOT/lib/task" status
-    exit $?
+if [[ "$command" =~ ^(ghost[,[:space:]]+)?(what[[:space:]]+are[[:space:]]+you[[:space:]]+working[[:space:]]+on|task[[:space:]]+status|did[[:space:]]+you[[:space:]]+finish)$ ]]; then
+    "$ROOT/lib/task" status || exit $?
+    if [ "${GHOST_VOICE_COMMAND_SPEAK:-0}" = "1" ]; then
+        source "$ROOT/lib/state"; ghost_state_init
+        task_status="$(jq -r '.status // "idle"' "$GHOST_TASK_FILE" 2>/dev/null || echo idle)"
+        case "$task_status" in
+            prepared) task_reply="Yes. The tested patch is ready for your review." ;;
+            applied) task_reply="Yes. The task was applied and the project tests pass." ;;
+            failed) task_reply="The task stopped with a failure. The result log is available." ;;
+            cancelled) task_reply="The current task was cancelled." ;;
+            queued|running|inspecting|preparing) task_reply="I am still working. The current phase is ${task_status}." ;;
+            *) task_reply="I do not have an active task." ;;
+        esac
+        "$ROOT/lib/speak" "$task_reply" || true
+    fi
+    exit 0
+fi
+
+if [[ "$command" =~ ^(ghost[,[:space:]]+)?(show[[:space:]]+(me[[:space:]]+)?the[[:space:]]+task[[:space:]]+result|task[[:space:]]+result)$ ]]; then
+    "$ROOT/lib/task" result || exit $?
+    if [ "${GHOST_VOICE_COMMAND_SPEAK:-0}" = "1" ]; then
+        source "$ROOT/lib/state"; ghost_state_init
+        task_status="$(jq -r '.status // "idle"' "$GHOST_TASK_FILE" 2>/dev/null || echo idle)"
+        case "$task_status" in
+            prepared) task_reply="The result is a tested patch ready for review." ;;
+            applied) task_reply="The result was applied and verified by the project tests." ;;
+            failed) task_reply="The task failed safely. No prepared change was applied." ;;
+            cancelled) task_reply="The task was cancelled." ;;
+            *) task_reply="The task has not finished yet." ;;
+        esac
+        "$ROOT/lib/speak" "$task_reply" || true
+    fi
+    exit 0
 fi
 
 if [[ "$command" =~ ^(ghost[,[:space:]]+)?(continue[[:space:]]+(the[[:space:]]+)?current[[:space:]]+task|continue[[:space:]]+task)$ ]]; then

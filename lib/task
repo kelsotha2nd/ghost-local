@@ -65,10 +65,43 @@ task_run() {
     echo "GHOST // TASK READY — say 'authorize prepared patch' to apply the tested change"
 }
 
+task_notification_sender() {
+    if command -v notify-send >/dev/null 2>&1; then
+        command -v notify-send; return 0
+    fi
+    return 1
+}
+
+task_notify() {
+    local task_id="$1" status delivered=false summary sender
+    status="$(jq -r '.status // empty' "$GHOST_TASK_FILE")"
+    case "$status" in
+        prepared) summary="Tested patch ready for review" ;;
+        failed) summary="Task failed; result log available" ;;
+        *) return 0 ;;
+    esac
+    sender="$(task_notification_sender || true)"
+    if [ -n "$sender" ]; then
+        "$sender" --app-name=GHOST "GHOST // ${status^^}" "$summary" >/dev/null 2>&1 && delivered=true
+    fi
+    task_active_update "$task_id" --arg summary "$summary" --argjson delivered "$delivered" \
+        '.notification={summary:$summary,desktop_delivered:$delivered,recorded_at:(now|todateiso8601)}' || true
+}
+
+task_worker() {
+    local task_id="$1" task_log run_status
+    task_log="$GHOST_STATE_DIR/task-${task_id}.log"
+    task_active_update "$task_id" --arg log "$task_log" '.log=$log | .updated_at=(now|todateiso8601)' || return $?
+    task_run 2>&1 | tee "$task_log"
+    run_status="${PIPESTATUS[0]}"; chmod 600 "$task_log"
+    task_notify "$task_id"
+    return "$run_status"
+}
+
 task_launch() {
     local task_id="$1" unit launch_status temporary
     if [ "${GHOST_TASK_FOREGROUND:-0}" = 1 ]; then
-        task_run
+        task_worker "$task_id"
         return $?
     fi
     command -v systemd-run >/dev/null 2>&1 || {
@@ -114,11 +147,29 @@ case "${1:-status}" in
         [[ "$task_id" =~ ^[0-9]{8}-[0-9]{6}$ ]] || exit 2
         [ -s "$GHOST_TASK_FILE" ] && [ "$(jq -r '.id // empty' "$GHOST_TASK_FILE")" = "$task_id" ] || exit 6
         case "$(jq -r '.status // empty' "$GHOST_TASK_FILE")" in queued|running) ;; *) exit 7 ;; esac
-        task_run
+        task_worker "$task_id"
         ;;
     status)
         if [ ! -s "$GHOST_TASK_FILE" ]; then echo "GHOST // TASK: idle"; exit 0; fi
         jq -r '"GHOST // TASK: \(.status)\n  id: \(.id)\n  type: \(.type)\n  request: \(.request)\n  project: \(.project_root)\n  updated: \(.updated_at)" + (if .patch_id then "\n  patch: \(.patch_id)" else "" end) + (if .failure then "\n  failure: \(.failure.error | split("\n") | last)" else "" end)' "$GHOST_TASK_FILE"
+        ;;
+    result)
+        [ -s "$GHOST_TASK_FILE" ] || { echo "GHOST // no current task" >&2; exit 4; }
+        status="$(jq -r '.status // empty' "$GHOST_TASK_FILE")"
+        case "$status" in
+            prepared) echo "GHOST // TASK RESULT: tested patch ready"; echo "  request: $(jq -r .request "$GHOST_TASK_FILE")"; echo "  next: ghost task continue" ;;
+            applied) echo "GHOST // TASK RESULT: applied and tested"; echo "  request: $(jq -r .request "$GHOST_TASK_FILE")" ;;
+            failed) echo "GHOST // TASK RESULT: failed"; echo "  $(jq -r '.failure.error | split("\n") | last' "$GHOST_TASK_FILE")"; echo "  details: ghost task log" ;;
+            cancelled) echo "GHOST // TASK RESULT: cancelled" ;;
+            queued|running|inspecting|preparing) echo "GHOST // TASK RESULT: still working ($(jq -r .status "$GHOST_TASK_FILE"))" ;;
+            *) echo "GHOST // TASK RESULT: unavailable" ;;
+        esac
+        ;;
+    log)
+        [ -s "$GHOST_TASK_FILE" ] || { echo "GHOST // no current task" >&2; exit 4; }
+        task_id="$(jq -r '.id // empty' "$GHOST_TASK_FILE")"; task_log="$(jq -r '.log // empty' "$GHOST_TASK_FILE")"
+        [ "$task_log" = "$GHOST_STATE_DIR/task-${task_id}.log" ] && [ -f "$task_log" ] || { echo "GHOST // current task log unavailable" >&2; exit 4; }
+        echo "GHOST // TASK LOG: $task_id"; tail -n 120 "$task_log"
         ;;
     continue)
         [ -s "$GHOST_TASK_FILE" ] || { echo "GHOST // no current task" >&2; exit 4; }
@@ -145,5 +196,5 @@ case "${1:-status}" in
         fi
         echo "GHOST // current task cancelled"
         ;;
-    *) echo "usage: ghost task <start REQUEST|status|continue|cancel>" >&2; exit 2 ;;
+    *) echo "usage: ghost task <start REQUEST|status|result|log|continue|cancel>" >&2; exit 2 ;;
 esac
