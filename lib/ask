@@ -206,7 +206,7 @@ if [ "${GHOST_SAVE_PROPOSAL:-0}" = "1" ]; then
         echo "GHOST // $validation_error" >&2
         exit 8
     }
-    proposal_id="$(ghost_proposal_save "$question" "$request_intent" "$answer")"
+    proposal_id="$(ghost_proposal_save "$question" "$request_intent" "$answer" "${GHOST_CAPABILITY_DESCRIPTOR:-null}")"
     printf 'GHOST // PROPOSAL SAVED: %s (pending review)\n' "$proposal_id"
 fi
 

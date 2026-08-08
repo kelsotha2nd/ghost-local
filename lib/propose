@@ -18,6 +18,13 @@ if [[ "$intent" != *change ]]; then
     exit 2
 fi
 
+capability_descriptor="$("$ROOT/lib/capability" resolve "$request")" || {
+    echo "GHOST // this change does not map to an installed executable capability" >&2
+    echo "GHOST // I can still discuss or inspect it, but I will not create a misleading executable proposal." >&2
+    exit 4
+}
+export GHOST_CAPABILITY_DESCRIPTOR="$capability_descriptor"
+
 tool_context="$("$ROOT/lib/inspect" --auto "$request")"
 if [ -n "$tool_context" ]; then
     export GHOST_TOOL_CONTEXT="$tool_context"

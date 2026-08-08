@@ -60,7 +60,8 @@ fi
         echo "GHOST // execution challenge expired" >&2
         exit 8
     }
-    computed_digest="$(printf '%s\0%s\0%s' "$request" "$intent" "$plan" | sha256sum | awk '{print $1}')"
+    capability="$(jq -cS '.capability // null' "$GHOST_PROPOSAL_FILE")"
+    computed_digest="$(ghost_proposal_digest "$request" "$intent" "$plan" "$capability")"
     [ "$computed_digest" = "$digest" ] && [ "$challenge_digest" = "$digest" ] || {
         echo "GHOST // proposal or challenge digest mismatch" >&2
         exit 9

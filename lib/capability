@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+
+set -o pipefail
+SOURCE="${BASH_SOURCE[0]}"
+ROOT="$(cd -P "$(dirname "$SOURCE")/.." >/dev/null 2>&1 && pwd)"
+
+case "${1:-}" in
+    list)
+        for manifest in "$ROOT"/capabilities/*.json; do
+            jq -r '[.id, .risk, .title] | @tsv' "$manifest"
+        done
+        ;;
+    show)
+        [ -n "${2:-}" ] || { echo "usage: ghost capability show <id>" >&2; exit 2; }
+        manifest="$ROOT/capabilities/${2}.json"
+        [ -f "$manifest" ] || { echo "GHOST // unknown capability: $2" >&2; exit 4; }
+        jq -S . "$manifest"
+        ;;
+    resolve)
+        shift
+        request="$*"; lower="${request,,}"
+        if [[ "$lower" =~ (add|install)[[:space:]]+(the[[:space:]]+)?(package[[:space:]]+)?([a-z0-9][a-z0-9+._-]*) ]]; then
+            package="${BASH_REMATCH[4]}"
+            jq -cS --arg target "$package" '. + {target: $target}' "$ROOT/capabilities/package.add.json"
+        else
+            echo "GHOST // no executable capability matches this request" >&2
+            exit 4
+        fi
+        ;;
+    *)
+        echo "usage: ghost capability <list|show ID|resolve REQUEST>" >&2
+        exit 2
+        ;;
+esac

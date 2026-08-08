@@ -254,3 +254,19 @@ that backup byte-for-byte with its original mode, then runs the fixed NixOS
 rollback command through normal sudo authentication. Success requires the
 recorded previous generation and active system profile to agree. Casual
 confirmation is ignored, and fixture rollback is restricted to `/tmp`.
+
+## Typed capabilities
+
+Executable work is selected by a deterministic capability registry, not by the
+language model. `ghost capability list` shows the installed actions, and
+`ghost capability show package.add` displays the safety contract for the package
+editor. A change request must resolve to an installed capability before GHOST
+will save it as executable. The resulting descriptor includes the capability
+ID, version, risk class, executor, validators, rollback strategy, and normalized
+target.
+
+That complete descriptor is stored inside the proposal and included in its
+cryptographic digest. Changing either the action type or target after proposal
+creation invalidates every later gate. Model-generated prose remains useful for
+explaining scope and risk, but it is not executable authority. Descriptor-free
+legacy proposals are accepted only by isolated `/tmp` test fixtures.

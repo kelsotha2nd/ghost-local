@@ -95,7 +95,8 @@ fi
         exit 19
     fi
 
-    computed_digest="$(printf '%s\0%s\0%s' "$request" "$intent" "$plan" | sha256sum | awk '{print $1}')"
+    capability="$(jq -cS '.capability // null' "$GHOST_PROPOSAL_FILE")"
+    computed_digest="$(ghost_proposal_digest "$request" "$intent" "$plan" "$capability")"
     [ "$computed_digest" = "$digest" ] || {
         echo "GHOST // proposal digest mismatch; execution refused" >&2
         exit 9
@@ -121,12 +122,19 @@ fi
         exit 11
     fi
 
-    request_lower="${request,,}"
-    if [[ ! "$request_lower" =~ (add|install)[[:space:]]+(the[[:space:]]+)?(package[[:space:]]+)?([a-z0-9][a-z0-9+._-]*) ]]; then
-        echo "GHOST // unsupported change shape; package addition required" >&2
-        exit 12
+    capability_id="$(jq -r '.id // empty' <<< "$capability")"
+    package="$(jq -r '.target // empty' <<< "$capability")"
+    if [ -z "$capability_id" ] && [ "$test_mode" = "1" ]; then
+        request_lower="${request,,}"
+        if [[ "$request_lower" =~ (add|install)[[:space:]]+(the[[:space:]]+)?(package[[:space:]]+)?([a-z0-9][a-z0-9+._-]*) ]]; then
+            capability_id=package.add
+            package="${BASH_REMATCH[4]}"
+        fi
     fi
-    package="${BASH_REMATCH[4]}"
+    [ "$capability_id" = package.add ] && [[ "$package" =~ ^[a-z0-9][a-z0-9+._-]*$ ]] || {
+        echo "GHOST // unsupported or invalid typed capability" >&2
+        exit 12
+    }
     if [ "$(nix-instantiate --eval --expr \
         "builtins.hasAttr \"${package}\" (import <nixpkgs> {})" 2>/dev/null)" != "true" ]; then
         echo "GHOST // package is not a verified top-level nixpkgs attribute: $package" >&2

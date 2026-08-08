@@ -103,6 +103,10 @@ case "${1:-}" in
         shift
         exec "$ROOT/lib/rollback-challenge" "$@"
         ;;
+    capability)
+        shift
+        exec "$ROOT/lib/capability" "$@"
+        ;;
     audio)
         exec "$ROOT/lib/audio"
         ;;
@@ -139,6 +143,7 @@ GHOST // COMMANDS
   ghost activate <id>   run an already-authorized activation
   ghost rollback        challenge rollback of the latest activation
   ghost authorize rollback authorize and run a challenged rollback
+  ghost capability list inspect installed action capabilities
   ghost audio           inspect audio devices and selection
   ghost benchmark [model] measure local model throughput
   ghost help            show this message

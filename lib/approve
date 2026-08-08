@@ -52,7 +52,8 @@ fi
         echo "GHOST // proposal predates approval fingerprints; regenerate it" >&2
         exit 8
     fi
-    computed_digest="$(printf '%s\0%s\0%s' "$request" "$intent" "$plan" | sha256sum | awk '{print $1}')"
+    capability="$(jq -cS '.capability // null' "$GHOST_PROPOSAL_FILE")"
+    computed_digest="$(ghost_proposal_digest "$request" "$intent" "$plan" "$capability")"
     if [ "$computed_digest" != "$digest" ]; then
         echo "GHOST // proposal digest mismatch; approval refused" >&2
         exit 10

@@ -1,0 +1,11 @@
+{
+  "id": "system.rollback",
+  "version": 1,
+  "title": "Restore the latest GHOST-managed NixOS activation",
+  "risk": "protected-system-change",
+  "target_kind": "recorded-generation",
+  "executor": "nixos-generation-rollback",
+  "validator": "active-generation-match",
+  "activation": "immediate",
+  "rollback": "manual-generation-recovery"
+}
