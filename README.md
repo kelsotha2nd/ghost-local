@@ -444,8 +444,10 @@ still follows normal deletion.
 `ghost session --wake` adds a deterministic address gate to the automatic
 session. Only utterances beginning with `Ghost` or the safe STT alias `Gus`
 proceed to command routing, history, or Ollama; other transcribed room speech is
-discarded locally. Saying only the name produces a short `Online`
-acknowledgement and waits for the next addressed turn. This is a transcript-level
+discarded locally. Saying only the name produces a short `Yes?` acknowledgement
+and arms exactly one six-second follow-up capture where the address is not
+required. A completed request or empty timeout immediately disarms that window;
+silence reports expiry and returns to guarded standby. This is a transcript-level
 wake gate, so Whisper still performs local transcription; a future acoustic wake
 detector can replace standby transcription without changing the downstream
 voice pipeline.

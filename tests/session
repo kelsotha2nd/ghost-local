@@ -39,4 +39,13 @@ printf '%s\n' '#!/usr/bin/env bash' 'printf "%s %s\\n" "$GHOST_WAKE_REQUIRED" "$
 chmod 755 "$wake_runner"; export GHOST_SESSION_WAKE_ARGS="$temporary_root/wake.args"
 GHOST_SESSION_TEST_MODE=1 GHOST_SESSION_VOICE_RUNNER="$wake_runner" GHOST_SESSION_ANNOUNCE=0 "$ROOT/lib/session" --wake >/dev/null
 [ "$(<"$GHOST_SESSION_WAKE_ARGS")" = '1 --auto' ]
+
+armed_runner="$temporary_root/armed-runner"; armed_count="$temporary_root/armed-count"
+printf '%s\n' '#!/usr/bin/env bash' 'count=0; [ ! -f "$GHOST_SESSION_ARMED_COUNT" ] || count="$(<"$GHOST_SESSION_ARMED_COUNT")"' 'count=$((count + 1)); printf "%s\n" "$count" > "$GHOST_SESSION_ARMED_COUNT"' 'printf "%s %s\n" "$GHOST_WAKE_REQUIRED" "$GHOST_AUTO_INITIAL_TIMEOUT_SECONDS" >> "$GHOST_SESSION_ARMED_ARGS"' '[ "$count" -eq 1 ] && exit 67' '[ "$count" -eq 2 ] && exit 66' 'exit 65' > "$armed_runner"
+chmod 755 "$armed_runner"; export GHOST_SESSION_ARMED_COUNT="$armed_count" GHOST_SESSION_ARMED_ARGS="$temporary_root/armed.args"
+armed_output="$(GHOST_SESSION_TEST_MODE=1 GHOST_SESSION_VOICE_RUNNER="$armed_runner" GHOST_SESSION_ANNOUNCE=0 "$ROOT/lib/session" --wake)"
+sed -n '1p' "$GHOST_SESSION_ARMED_ARGS" | grep -qx '1 12'
+sed -n '2p' "$GHOST_SESSION_ARMED_ARGS" | grep -qx '0 6'
+sed -n '3p' "$GHOST_SESSION_ARMED_ARGS" | grep -qx '1 12'
+[[ "$armed_output" == *'follow-up window expired'* ]]
 echo "session tests passed"

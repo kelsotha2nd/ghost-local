@@ -26,8 +26,8 @@ if [ "${GHOST_WAKE_REQUIRED:-0}" = 1 ]; then
     wake_request="$("$ROOT/lib/wake-phrase" "$transcript")"; wake_status=$?
     if [ "$wake_status" -eq 2 ]; then
         echo "GHOST // WAKE: acknowledged"
-        "$ROOT/lib/speak" "Online." || true
-        exit 0
+        "$ROOT/lib/speak" "Yes?" || true
+        exit 67
     elif [ "$wake_status" -ne 0 ]; then
         echo "GHOST // WAKE: background speech ignored"
         exit 0

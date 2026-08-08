@@ -28,13 +28,26 @@ if [ "${GHOST_SESSION_ANNOUNCE:-1}" = 1 ]; then
     "$ROOT/lib/speak" "Voice session online." || true
 fi
 
-failures=0
+failures=0; wake_armed=0
 while [ "$running" -eq 1 ]; do
-    GHOST_SESSION_MODE=1 GHOST_WAKE_REQUIRED="$wake_required" "$runner" "${capture_args[@]}"
+    turn_wake_required="$wake_required"
+    turn_initial_timeout="${GHOST_AUTO_INITIAL_TIMEOUT_SECONDS:-12}"
+    if [ "$wake_armed" -eq 1 ]; then
+        turn_wake_required=0
+        turn_initial_timeout="${GHOST_WAKE_FOLLOWUP_SECONDS:-6}"
+    fi
+    [[ "$turn_initial_timeout" =~ ^[1-9][0-9]*$ ]] || { echo "GHOST // invalid wake follow-up timeout" >&2; exit 2; }
+    GHOST_SESSION_MODE=1 GHOST_WAKE_REQUIRED="$turn_wake_required" \
+        GHOST_AUTO_INITIAL_TIMEOUT_SECONDS="$turn_initial_timeout" "$runner" "${capture_args[@]}"
     voice_status=$?
     case "$voice_status" in
-        0) failures=0 ;;
-        66) failures=0 ;;
+        0) failures=0; wake_armed=0 ;;
+        66)
+            failures=0
+            if [ "$wake_armed" -eq 1 ]; then echo "GHOST // WAKE: follow-up window expired"; fi
+            wake_armed=0
+            ;;
+        67) failures=0; wake_armed=1 ;;
         65) echo "GHOST // SESSION OFFLINE"; exit 0 ;;
         130|143) break ;;
         *)
