@@ -6,6 +6,26 @@ transcript="$*"
 command="${transcript,,}"
 command="${command%[.!?]}"
 
+if [[ "$command" =~ ^(ghost[,[:space:]]+)?(what[[:space:]]+are[[:space:]]+you[[:space:]]+working[[:space:]]+on|task[[:space:]]+status)$ ]]; then
+    "$ROOT/lib/task" status
+    exit $?
+fi
+
+if [[ "$command" =~ ^(ghost[,[:space:]]+)?(continue[[:space:]]+(the[[:space:]]+)?current[[:space:]]+task|continue[[:space:]]+task)$ ]]; then
+    "$ROOT/lib/task" continue
+    exit $?
+fi
+
+if [[ "$command" =~ ^(ghost[,[:space:]]+)?(cancel[[:space:]]+(the[[:space:]]+)?current[[:space:]]+task|cancel[[:space:]]+task)$ ]]; then
+    "$ROOT/lib/task" cancel
+    exit $?
+fi
+
+if [[ "$command" =~ ^(ghost[,[:space:]]+)?work[[:space:]]+on[[:space:]]+ghost:[[:space:]]+(.+)$ ]]; then
+    "$ROOT/lib/task" start "${BASH_REMATCH[2]}"
+    exit $?
+fi
+
 if [[ "$command" =~ ^(ghost[,[:space:]]+)?authorize[[:space:]]+prepared[[:space:]]+patch$ ]]; then
     GHOST_AUTHORIZE_PROJECT_APPLY="${GHOST_VOICE_COMMAND_PROJECT_APPLY:-1}" \
         "$ROOT/lib/project-authorize-apply" || exit $?

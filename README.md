@@ -376,3 +376,21 @@ still belongs to the current user with the same start identity before requesting
 TERM. EXIT handlers release the lock, remove status, and—in patch preparation—
 remove the isolated worktree. `ghost workload check` exposes the current
 admission decision without launching a model.
+
+## Persistent tasks
+
+`ghost task start <work>` gives GHOST one durable project job instead of a
+one-shot prompt. It records the request and project, captures the baseline test
+result, passes that evidence into the isolated patch loop, and remains attached
+to the resulting reviewed patch. Only one task can be active at a time, so a
+second request cannot silently compete with or replace the first.
+
+The conversational equivalents are deliberately narrow: `work on Ghost:
+<request>`, `what are you working on`, `continue current task`, and `cancel the
+current task`. You never need to repeat a generated ID. Continue reviews a
+prepared patch; applying it still requires the separate exact phrase `authorize
+prepared patch`. A successful active-checkout validation marks the task applied.
+If validation fails, the patch is reversed and the task records failure.
+Cancellation asks the workload governor to stop active heavy work, invalidates
+any prepared patch, and prevents a late model result from reviving the cancelled
+task.

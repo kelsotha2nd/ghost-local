@@ -38,10 +38,20 @@ if [ "$test_status" -ne 0 ]; then
     [ "$rollback_status" -eq 0 ] && [ -z "$(git -C "$project_root" status --porcelain=v1)" ] || { echo "GHOST // CRITICAL: patch tests failed and automatic reversal was incomplete" >&2; exit 14; }
     applied=0; completed=1; temporary="$(mktemp "$GHOST_STATE_DIR/.project-patch.XXXXXX")"
     jq --arg log "$application_log" '.status="application-failed-restored" | .application={result:"failed-restored",test_log:$log}' "$state_file" > "$temporary"; chmod 600 "$temporary"; mv "$temporary" "$state_file"
+    if [ -s "$GHOST_TASK_FILE" ] && [ "$(jq -r '.patch_id // empty' "$GHOST_TASK_FILE")" = "$(jq -r .id "$state_file")" ]; then
+        temporary="$(mktemp "$GHOST_STATE_DIR/.task.XXXXXX")"
+        jq '.status="failed" | .failure={exit_status:13,error:"applied patch failed validation; checkout restored"} | .updated_at=(now|todateiso8601)' "$GHOST_TASK_FILE" > "$temporary"
+        chmod 600 "$temporary"; mv "$temporary" "$GHOST_TASK_FILE"
+    fi
     echo "GHOST // PATCH VALIDATION FAILED — ACTIVE CHECKOUT RESTORED" >&2; exit 13
 fi
 completed=1; applied_at="$(date --iso-8601=seconds)"; diff_sha="$(git -C "$project_root" diff --binary | sha256sum | awk '{print $1}')"; temporary="$(mktemp "$GHOST_STATE_DIR/.project-patch.XXXXXX")"
 jq --arg applied_at "$applied_at" --arg log "$application_log" --arg diff_sha "$diff_sha" \
     '.status="applied-tested" | .application={result:"passed",applied_at:$applied_at,test_log:$log,working_diff_sha256:$diff_sha,commit:"not-created"}' "$state_file" > "$temporary"; chmod 600 "$temporary"; mv "$temporary" "$state_file"
+if [ -s "$GHOST_TASK_FILE" ] && [ "$(jq -r '.patch_id // empty' "$GHOST_TASK_FILE")" = "$(jq -r .id "$state_file")" ]; then
+    temporary="$(mktemp "$GHOST_STATE_DIR/.task.XXXXXX")"
+    jq '.status="applied" | .updated_at=(now|todateiso8601)' "$GHOST_TASK_FILE" > "$temporary"
+    chmod 600 "$temporary"; mv "$temporary" "$GHOST_TASK_FILE"
+fi
 echo "GHOST // PREPARED PATCH APPLIED AND TESTED"
 echo "  commit: not created"; echo "  checkout: contains verified working-tree changes"

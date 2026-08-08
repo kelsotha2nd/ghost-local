@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+ROOT="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." >/dev/null 2>&1 && pwd)"
+temporary_root="$(mktemp -d /tmp/ghost-task-test.XXXXXX)"; trap 'rm -r "$temporary_root"' EXIT
+fixture_repo="$temporary_root/repo"; mkdir -p "$fixture_repo/.ghost" "$fixture_repo/tests"
+printf '%s\n' '#!/usr/bin/env bash' 'echo old' > "$fixture_repo/app.sh"
+printf '%s\n' '#!/usr/bin/env bash' 'set -e' "grep -q '^echo new$' app.sh" 'echo fixture project tests passed' > "$fixture_repo/tests/run"
+chmod 755 "$fixture_repo/app.sh" "$fixture_repo/tests/run"
+printf '%s\n' '{"schema":1,"id":"fixture","test":["./tests/run"]}' > "$fixture_repo/.ghost/project.json"
+git -C "$fixture_repo" init -q
+git -C "$fixture_repo" config user.name 'GHOST Test'
+git -C "$fixture_repo" config user.email 'ghost-test@localhost'
+git -C "$fixture_repo" add .
+git -C "$fixture_repo" commit -qm fixture
+
+export GHOST_STATE_DIR="$temporary_root/state"
+export GHOST_TASK_TEST_MODE=1
+export GHOST_TASK_PROJECT_ROOT="$fixture_repo"
+export GHOST_PROJECT_PREPARE_TEST_MODE=1
+export GHOST_PROJECT_PATCH_FIXTURE="$ROOT/tests/fixtures/project-change.diff"
+export GHOST_WORKLOAD_IGNORE_PRESSURE=1
+
+start_output="$("$ROOT/lib/task" start 'change old to new')"
+[[ "$start_output" == *'TASK READY'* ]]
+[ "$(jq -r .status "$GHOST_STATE_DIR/task.json")" = prepared ]
+patch_id="$(jq -r .id "$GHOST_STATE_DIR/project-patch.json")"
+[ "$(jq -r .patch_id "$GHOST_STATE_DIR/task.json")" = "$patch_id" ]
+baseline_log="$(jq -r .baseline.test_log "$GHOST_STATE_DIR/task.json")"
+[ "$(jq -r .baseline.exit_status "$GHOST_STATE_DIR/task.json")" = 1 ]
+[ -f "$baseline_log" ]
+
+status_output="$("$ROOT/lib/voice-command" 'Ghost, what are you working on?')"
+[[ "$status_output" == *'TASK: prepared'* ]]
+continue_output="$("$ROOT/lib/voice-command" 'continue current task')"
+[[ "$continue_output" == *'PREPARED PROJECT PATCH'* ]]
+
+apply_output="$(GHOST_PROJECT_APPLY_TEST_MODE=1 GHOST_AUTHORIZE_PROJECT_APPLY=1 "$ROOT/lib/project-authorize-apply")"
+[[ "$apply_output" == *'PREPARED PATCH APPLIED AND TESTED'* ]]
+[ "$(jq -r .status "$GHOST_STATE_DIR/task.json")" = applied ]
+grep -q '^echo new$' "$fixture_repo/app.sh"
+patch_file="$(jq -r .patch "$GHOST_STATE_DIR/project-patch.json")"
+git -C "$fixture_repo" apply -R "$patch_file"
+
+voice_start="$("$ROOT/lib/voice-command" 'Ghost, work on Ghost: change old to new.')"
+[[ "$voice_start" == *'TASK READY'* ]]
+[ "$(jq -r .status "$GHOST_STATE_DIR/task.json")" = prepared ]
+cancel_output="$("$ROOT/lib/voice-command" 'cancel the current task')"
+[[ "$cancel_output" == *'current task cancelled'* ]]
+[ "$(jq -r .status "$GHOST_STATE_DIR/task.json")" = cancelled ]
+[ "$(jq -r .status "$GHOST_STATE_DIR/project-patch.json")" = cancelled ]
+
+set +e
+"$ROOT/lib/voice-command" 'yeah keep going' >/dev/null 2>&1
+casual_status=$?
+set -e
+[ "$casual_status" -eq 64 ]
+echo "task tests passed"

@@ -1,0 +1,100 @@
+#!/usr/bin/env bash
+
+set -o pipefail
+SOURCE="${BASH_SOURCE[0]}"; ROOT="$(cd -P "$(dirname "$SOURCE")/.." >/dev/null 2>&1 && pwd)"
+# shellcheck source=state
+source "$ROOT/lib/state"
+
+task_write() {
+    local filter="$1" temporary
+    temporary="$(mktemp "$GHOST_STATE_DIR/.task.XXXXXX")"
+    jq "$filter" "$GHOST_TASK_FILE" > "$temporary"; chmod 600 "$temporary"; mv "$temporary" "$GHOST_TASK_FILE"
+}
+
+task_project_root() {
+    local current
+    if [ "${GHOST_TASK_TEST_MODE:-0}" = 1 ]; then
+        case "${GHOST_TASK_PROJECT_ROOT:-}" in /tmp/*) printf '%s\n' "$GHOST_TASK_PROJECT_ROOT"; return ;; esac
+        return 1
+    fi
+    current="$(git -C "$PWD" rev-parse --show-toplevel 2>/dev/null || true)"
+    if [ "$current" = "$ROOT" ]; then printf '%s\n' "$current"; else printf '%s\n' "$ROOT"; fi
+}
+
+task_run() {
+    local project_root request task_id baseline_log baseline_status prepare_output prepare_status patch_id temporary current_status
+    project_root="$(jq -r .project_root "$GHOST_TASK_FILE")"; request="$(jq -r .request "$GHOST_TASK_FILE")"; task_id="$(jq -r .id "$GHOST_TASK_FILE")"
+    task_write '.status="inspecting" | .updated_at=(now|todateiso8601)'
+    baseline_log="$GHOST_STATE_DIR/task-${task_id}-baseline.log"
+    (cd "$project_root" && ./tests/run) > "$baseline_log" 2>&1; baseline_status=$?; chmod 600 "$baseline_log"
+    temporary="$(mktemp "$GHOST_STATE_DIR/.task.XXXXXX")"
+    jq --arg log "$baseline_log" --argjson status "$baseline_status" \
+        '.baseline={test_log:$log,exit_status:$status} | .status="preparing" | .updated_at=(now|todateiso8601)' "$GHOST_TASK_FILE" > "$temporary"
+    chmod 600 "$temporary"; mv "$temporary" "$GHOST_TASK_FILE"
+    prepare_output="$(GHOST_PROJECT_INITIAL_FEEDBACK_FILE="$baseline_log" "$ROOT/lib/project-prepare" "$project_root" "$request" 2>&1)"
+    prepare_status=$?
+    current_status="$(jq -r '.status // empty' "$GHOST_TASK_FILE")"
+    if [ "$current_status" = cancelled ]; then
+        printf '%s\n' "$prepare_output"
+        echo "GHOST // task result discarded because cancellation was requested"
+        return 7
+    fi
+    if [ "$prepare_status" -ne 0 ]; then
+        temporary="$(mktemp "$GHOST_STATE_DIR/.task.XXXXXX")"
+        jq --arg error "${prepare_output: -2000}" --argjson exit_status "$prepare_status" \
+            '.status="failed" | .failure={exit_status:$exit_status,error:$error} | .updated_at=(now|todateiso8601)' "$GHOST_TASK_FILE" > "$temporary"
+        chmod 600 "$temporary"; mv "$temporary" "$GHOST_TASK_FILE"
+        printf '%s\n' "$prepare_output" >&2; return "$prepare_status"
+    fi
+    patch_id="$(jq -r .id "$GHOST_STATE_DIR/project-patch.json")"; temporary="$(mktemp "$GHOST_STATE_DIR/.task.XXXXXX")"
+    jq --arg patch_id "$patch_id" '.status="prepared" | .patch_id=$patch_id | .updated_at=(now|todateiso8601)' "$GHOST_TASK_FILE" > "$temporary"
+    chmod 600 "$temporary"; mv "$temporary" "$GHOST_TASK_FILE"
+    printf '%s\n' "$prepare_output"
+    echo "GHOST // TASK READY — say 'authorize prepared patch' to apply the tested change"
+}
+
+ghost_state_init
+case "${1:-status}" in
+    start)
+        shift; request="$*"; [ -n "$request" ] || { echo "usage: ghost task start <project work>" >&2; exit 2; }
+        if [ -s "$GHOST_TASK_FILE" ]; then
+            existing="$(jq -r '.status // empty' "$GHOST_TASK_FILE")"
+            case "$existing" in running|inspecting|preparing|prepared) echo "GHOST // active task must be completed or cancelled first" >&2; exit 6 ;; esac
+        fi
+        project_root="$(task_project_root)" || { echo "GHOST // trusted task project unavailable" >&2; exit 4; }
+        if [ "${GHOST_TASK_TEST_MODE:-0}" != 1 ]; then
+            [ -f "$project_root/.ghost/project.json" ] && [ "$(jq -r .id "$project_root/.ghost/project.json")" = ghost ] || {
+                echo "GHOST // trusted task manifest unavailable" >&2; exit 5;
+            }
+        fi
+        task_id="$(date +%Y%m%d-%H%M%S)"; created_at="$(date --iso-8601=seconds)"
+        jq -n --arg id "$task_id" --arg request "$request" --arg project_root "$project_root" --arg created_at "$created_at" \
+            '{id:$id,type:"project-change",status:"running",request:$request,project_root:$project_root,created_at:$created_at,updated_at:$created_at}' > "$GHOST_TASK_FILE"
+        chmod 600 "$GHOST_TASK_FILE"; task_run
+        ;;
+    status)
+        if [ ! -s "$GHOST_TASK_FILE" ]; then echo "GHOST // TASK: idle"; exit 0; fi
+        jq -r '"GHOST // TASK: \(.status)\n  id: \(.id)\n  type: \(.type)\n  request: \(.request)\n  project: \(.project_root)\n  updated: \(.updated_at)" + (if .patch_id then "\n  patch: \(.patch_id)" else "" end) + (if .failure then "\n  failure: \(.failure.error | split("\n") | last)" else "" end)' "$GHOST_TASK_FILE"
+        ;;
+    continue)
+        [ -s "$GHOST_TASK_FILE" ] || { echo "GHOST // no current task" >&2; exit 4; }
+        status="$(jq -r .status "$GHOST_TASK_FILE")"
+        case "$status" in
+            prepared) GHOST_PROJECT_CWD="$(jq -r .project_root "$GHOST_TASK_FILE")" exec "$ROOT/lib/project" patch ;;
+            failed|running|inspecting|preparing) task_run ;;
+            applied) echo "GHOST // current task is complete" ;;
+            cancelled) echo "GHOST // current task was cancelled" ;;
+            *) echo "GHOST // task cannot continue from status: $status" >&2; exit 6 ;;
+        esac
+        ;;
+    cancel)
+        [ -s "$GHOST_TASK_FILE" ] || { echo "GHOST // no current task" >&2; exit 4; }
+        "$ROOT/lib/workload" cancel >/dev/null 2>&1 || true
+        if [ -s "$GHOST_STATE_DIR/project-patch.json" ] && [ "$(jq -r '.status // empty' "$GHOST_STATE_DIR/project-patch.json")" = prepared-tested ]; then
+            temporary="$(mktemp "$GHOST_STATE_DIR/.project-patch.XXXXXX")"; jq '.status="cancelled" | del(.application_challenge.nonce) | .application_challenge.consumed=true' "$GHOST_STATE_DIR/project-patch.json" > "$temporary"; chmod 600 "$temporary"; mv "$temporary" "$GHOST_STATE_DIR/project-patch.json"
+        fi
+        task_write '.status="cancelled" | .updated_at=(now|todateiso8601)'
+        echo "GHOST // current task cancelled"
+        ;;
+    *) echo "usage: ghost task <start REQUEST|status|continue|cancel>" >&2; exit 2 ;;
+esac

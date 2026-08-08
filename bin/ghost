@@ -115,6 +115,10 @@ case "${1:-}" in
         shift
         exec "$ROOT/lib/workload" "$@"
         ;;
+    task)
+        shift
+        exec "$ROOT/lib/task" "$@"
+        ;;
     audio)
         exec "$ROOT/lib/audio"
         ;;
@@ -162,6 +166,10 @@ GHOST // COMMANDS
   ghost workload status inspect the heavy-job governor
   ghost workload check  check resources for heavy local work
   ghost workload cancel request cancellation of the active heavy job
+  ghost task start <work> start one persistent, safely prepared project task
+  ghost task status     inspect what GHOST is currently working on
+  ghost task continue   resume or review the current task
+  ghost task cancel     cancel the current task and invalidate its patch
   ghost audio           inspect audio devices and selection
   ghost benchmark [model] measure local model throughput
   ghost help            show this message

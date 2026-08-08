@@ -49,6 +49,12 @@ fi
 
 raw_patch="$(mktemp /tmp/ghost-project-raw-patch.XXXXXX)"; test_log="$(mktemp /tmp/ghost-project-test.XXXXXX)"; feedback_file="$(mktemp /tmp/ghost-project-feedback.XXXXXX)"
 trap 'rm -f "$raw_patch" "$test_log" "$feedback_file"; cleanup' EXIT
+if [ -f "${GHOST_PROJECT_INITIAL_FEEDBACK_FILE:-}" ]; then
+    {
+        echo "BASELINE TEST OUTPUT:"
+        tail -n 120 "$GHOST_PROJECT_INITIAL_FEEDBACK_FILE"
+    } > "$feedback_file"
+fi
 max_attempts="${GHOST_PROJECT_PATCH_ATTEMPTS:-2}"; [[ "$max_attempts" =~ ^[1-3]$ ]] || { echo "GHOST // patch attempts must be between 1 and 3" >&2; exit 3; }
 attempt=1
 while [ "$attempt" -le "$max_attempts" ]; do
