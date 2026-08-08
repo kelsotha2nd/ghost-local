@@ -6,6 +6,15 @@ transcript="$*"
 command="${transcript,,}"
 command="${command%[.!?]}"
 
+if [[ "$command" =~ ^(ghost[,[:space:]]+)?authorize[[:space:]]+prepared[[:space:]]+patch$ ]]; then
+    GHOST_AUTHORIZE_PROJECT_APPLY="${GHOST_VOICE_COMMAND_PROJECT_APPLY:-1}" \
+        "$ROOT/lib/project-authorize-apply" || exit $?
+    if [ "${GHOST_VOICE_COMMAND_SPEAK:-0}" = "1" ]; then
+        "$ROOT/lib/speak" "The prepared patch is applied and the project tests pass. No commit was created." || true
+    fi
+    exit 0
+fi
+
 if [[ "$command" =~ ^(ghost[,[:space:]]+)?prepare[[:space:]]+system[[:space:]]+rollback$ ]]; then
     "$ROOT/lib/rollback-challenge" || exit $?
     if [ "${GHOST_VOICE_COMMAND_SPEAK:-0}" = "1" ]; then

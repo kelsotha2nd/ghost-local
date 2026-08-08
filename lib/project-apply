@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+
+set -o pipefail
+SOURCE="${BASH_SOURCE[0]}"; ROOT="$(cd -P "$(dirname "$SOURCE")/.." >/dev/null 2>&1 && pwd)"
+# shellcheck source=state
+source "$ROOT/lib/state"; ghost_state_init
+state_file="$GHOST_STATE_DIR/project-patch.json"; [ -s "$state_file" ] || exit 4
+project_root="$(jq -r '.project_root // empty' "$state_file")"; patch_file="$(jq -r '.patch // empty' "$state_file")"; expected_patch="$(jq -r '.patch_sha256 // empty' "$state_file")"
+test_mode="${GHOST_PROJECT_APPLY_TEST_MODE:-0}"
+if [ "$test_mode" = 1 ]; then case "$project_root" in /tmp/*) ;; *) echo "GHOST // apply fixture project must live beneath /tmp" >&2; exit 21 ;; esac
+else [ "$project_root" = "$ROOT" ] || { echo "GHOST // patch application is not trusted for this project" >&2; exit 6; }; fi
+[ "$(jq -r '.status' "$state_file")" = application-authorized ] || { echo "GHOST // patch application is not authorized" >&2; exit 5; }
+[ "$(date +%s)" -lt "$(jq -r '.application_authorization.expires_epoch // 0' "$state_file")" ] || { echo "GHOST // patch application authorization expired" >&2; exit 7; }
+[ -s "$patch_file" ] && [ "$(sha256sum "$patch_file" | awk '{print $1}')" = "$expected_patch" ] || { echo "GHOST // prepared patch fingerprint mismatch" >&2; exit 8; }
+[ "$(git -C "$project_root" rev-parse HEAD)" = "$(jq -r '.head' "$state_file")" ] || { echo "GHOST // project HEAD changed; application refused" >&2; exit 9; }
+[ -z "$(git -C "$project_root" status --porcelain=v1)" ] || { echo "GHOST // active checkout is not clean; application refused" >&2; exit 10; }
+[ "$(jq -cS '.test' "$project_root/.ghost/project.json")" = '["./tests/run"]' ] || { echo "GHOST // registered test contract changed" >&2; exit 11; }
+git -C "$project_root" apply --check "$patch_file" || { echo "GHOST // prepared patch no longer applies" >&2; exit 12; }
+applied=0; completed=0
+restore_on_exit() {
+    rc=$?
+    if [ "$applied" -eq 1 ] && [ "$completed" -eq 0 ]; then
+        git -C "$project_root" apply -R "$patch_file" >/dev/null 2>&1 || true
+    fi
+    return "$rc"
+}
+trap restore_on_exit EXIT INT TERM
+git -C "$project_root" apply "$patch_file" || exit 12; applied=1
+application_log="$GHOST_STATE_DIR/project-patch-$(jq -r .id "$state_file").apply.log"
+if [ "$test_mode" = 1 ] && [ "${GHOST_PROJECT_APPLY_FORCE_TEST_FAILURE:-0}" = 1 ]; then
+    printf '%s\n' 'forced application validation failure' > "$application_log"; test_status=1
+else
+    (cd "$project_root" && ./tests/run) > "$application_log" 2>&1; test_status=$?
+fi
+chmod 600 "$application_log"
+if [ "$test_status" -ne 0 ]; then
+    git -C "$project_root" apply -R --check "$patch_file" && git -C "$project_root" apply -R "$patch_file"; rollback_status=$?
+    [ "$rollback_status" -eq 0 ] && [ -z "$(git -C "$project_root" status --porcelain=v1)" ] || { echo "GHOST // CRITICAL: patch tests failed and automatic reversal was incomplete" >&2; exit 14; }
+    applied=0; completed=1; temporary="$(mktemp "$GHOST_STATE_DIR/.project-patch.XXXXXX")"
+    jq --arg log "$application_log" '.status="application-failed-restored" | .application={result:"failed-restored",test_log:$log}' "$state_file" > "$temporary"; chmod 600 "$temporary"; mv "$temporary" "$state_file"
+    echo "GHOST // PATCH VALIDATION FAILED — ACTIVE CHECKOUT RESTORED" >&2; exit 13
+fi
+completed=1; applied_at="$(date --iso-8601=seconds)"; diff_sha="$(git -C "$project_root" diff --binary | sha256sum | awk '{print $1}')"; temporary="$(mktemp "$GHOST_STATE_DIR/.project-patch.XXXXXX")"
+jq --arg applied_at "$applied_at" --arg log "$application_log" --arg diff_sha "$diff_sha" \
+    '.status="applied-tested" | .application={result:"passed",applied_at:$applied_at,test_log:$log,working_diff_sha256:$diff_sha,commit:"not-created"}' "$state_file" > "$temporary"; chmod 600 "$temporary"; mv "$temporary" "$state_file"
+echo "GHOST // PREPARED PATCH APPLIED AND TESTED"
+echo "  commit: not created"; echo "  checkout: contains verified working-tree changes"

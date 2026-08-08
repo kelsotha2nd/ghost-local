@@ -69,11 +69,16 @@ test_log="$(mktemp /tmp/ghost-project-test.XXXXXX)"; trap 'rm -f "$raw_patch" "$
 patch_id="$(date +%Y%m%d-%H%M%S)"; saved_patch="$GHOST_STATE_DIR/project-patch-${patch_id}.diff"; saved_log="$GHOST_STATE_DIR/project-patch-${patch_id}.test.log"
 cp "$raw_patch" "$saved_patch"; cp "$test_log" "$saved_log"; chmod 600 "$saved_patch" "$saved_log"
 patch_sha="$(sha256sum "$saved_patch" | awk '{print $1}')"; created_at="$(date --iso-8601=seconds)"
+challenge_ttl="${GHOST_PROJECT_APPLY_TTL_SECONDS:-600}"; [[ "$challenge_ttl" =~ ^[1-9][0-9]*$ ]] || { echo "GHOST // invalid patch application TTL" >&2; exit 3; }
+expires_epoch="$(( $(date +%s) + challenge_ttl ))"; expires_at="$(date --date="@$expires_epoch" --iso-8601=seconds)"; nonce="$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
 jq -n --arg id "$patch_id" --arg created_at "$created_at" --arg project_root "$project_root" --arg head "$head_commit" \
-    --arg request "$request" --arg patch "$saved_patch" --arg patch_sha256 "$patch_sha" --arg test_log "$saved_log" \
+    --arg request "$request" --arg patch "$saved_patch" --arg patch_sha256 "$patch_sha" --arg test_log "$saved_log" --arg nonce "$nonce" --arg expires_at "$expires_at" --argjson expires_epoch "$expires_epoch" \
     --argjson files "$(printf '%s\n' "${changed_files[@]}" | jq -R . | jq -s .)" \
-    '{id:$id,created_at:$created_at,status:"prepared-tested",project_root:$project_root,head:$head,request:$request,patch:$patch,patch_sha256:$patch_sha256,test_log:$test_log,files:$files}' \
+    '{id:$id,created_at:$created_at,status:"prepared-tested",project_root:$project_root,head:$head,request:$request,patch:$patch,patch_sha256:$patch_sha256,test_log:$test_log,files:$files,
+      application_challenge:{nonce:$nonce,expires_at:$expires_at,expires_epoch:$expires_epoch,consumed:false}}' \
     > "$GHOST_STATE_DIR/project-patch.json"; chmod 600 "$GHOST_STATE_DIR/project-patch.json"
 echo "GHOST // ISOLATED PATCH PREPARED AND TESTED"
 echo "  id: $patch_id"; echo "  base: ${head_commit:0:12}"; echo "  files: ${#changed_files[@]}"; echo "  active checkout: unchanged"
+echo "  apply challenge expires: $expires_at"
 echo; sed -n '1,240p' "$saved_patch"
+echo; echo "To apply this tested patch, say exactly:"; echo "authorize prepared patch"

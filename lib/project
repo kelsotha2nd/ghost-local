@@ -88,8 +88,11 @@ ${test_output}"
         jq -r '"GHOST // PREPARED PROJECT PATCH\n  id: \(.id)\n  status: \(.status)\n  base: \(.head[0:12])\n  request: \(.request)\n  files: \(.files | join(", "))\n"' "$GHOST_STATE_DIR/project-patch.json"
         sed -n '1,320p' "$patch_file"
         ;;
+    apply)
+        GHOST_AUTHORIZE_PROJECT_APPLY=1 exec "$GHOST_ROOT/lib/project-authorize-apply"
+        ;;
     *)
-        echo "usage: ghost project <inspect|files|search PATTERN|test|diagnose QUESTION|prepare CHANGE|patch>" >&2
+        echo "usage: ghost project <inspect|files|search PATTERN|test|diagnose QUESTION|prepare CHANGE|patch|apply>" >&2
         exit 2
         ;;
 esac

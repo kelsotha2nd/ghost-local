@@ -26,6 +26,18 @@ grep -q '^+echo new$' "$patch_file"
 display="$(GHOST_PROJECT_CWD="$fixture_repo" "$ROOT/lib/project" patch)"
 [[ "$display" == *'PREPARED PROJECT PATCH'* ]]
 [[ "$display" == *'+echo new'* ]]
+set +e
+GHOST_PROJECT_APPLY_TEST_MODE=1 "$ROOT/lib/voice-command" 'yes apply it' >/dev/null 2>&1
+casual_status=$?
+set -e
+[ "$casual_status" -eq 64 ]
+apply_output="$(GHOST_PROJECT_APPLY_TEST_MODE=1 "$ROOT/lib/voice-command" 'authorize prepared patch.')"
+[[ "$apply_output" == *'PREPARED PATCH APPLIED AND TESTED'* ]]
+grep -q '^echo new$' "$fixture_repo/app.sh"
+[ "$(jq -r .status "$GHOST_STATE_DIR/project-patch.json")" = applied-tested ]
+[ "$(jq -r .application.commit "$GHOST_STATE_DIR/project-patch.json")" = not-created ]
+git -C "$fixture_repo" apply -R "$patch_file"
+[ -z "$(git -C "$fixture_repo" status --porcelain=v1)" ]
 
 touch "$fixture_repo/untracked"
 set +e
@@ -55,4 +67,16 @@ set -e
 [ "$failing_status" -eq 13 ]
 grep -q '^echo old$' "$fixture_repo/app.sh"
 [ "$(git -C "$fixture_repo" worktree list --porcelain | grep -c '^worktree ')" -eq 1 ]
+
+GHOST_PROJECT_PREPARE_TEST_MODE=1 GHOST_PROJECT_PATCH_FIXTURE="$ROOT/tests/fixtures/project-change.diff" \
+    "$ROOT/lib/project-prepare" "$fixture_repo" 'change old to new' >/dev/null
+set +e
+GHOST_PROJECT_APPLY_TEST_MODE=1 GHOST_PROJECT_APPLY_FORCE_TEST_FAILURE=1 \
+    GHOST_AUTHORIZE_PROJECT_APPLY=1 "$ROOT/lib/project-authorize-apply" >/dev/null 2>&1
+apply_failure_status=$?
+set -e
+[ "$apply_failure_status" -eq 13 ]
+[ "$(jq -r .status "$GHOST_STATE_DIR/project-patch.json")" = application-failed-restored ]
+grep -q '^echo old$' "$fixture_repo/app.sh"
+[ -z "$(git -C "$fixture_repo" status --porcelain=v1)" ]
 echo "project prepare tests passed"

@@ -337,4 +337,15 @@ permissions, then removes the worktree. Dirty checkouts, malformed patches,
 protected or unseen paths, apply failures, and test failures all leave the
 active checkout untouched. `ghost project patch` fingerprints and displays the
 latest prepared patch for review; applying it is intentionally a separate
-future authorization boundary.
+authorization boundary.
+
+Preparation issues a private ten-minute application challenge. The exact phrase
+`authorize prepared patch`—or the explicit `ghost project apply` command—consumes
+it. Before touching the checkout, GHOST rechecks the patch fingerprint, recorded
+base commit, clean Git state, project identity, and test contract. It applies the
+diff without committing, reruns the complete suite in the active checkout, and
+records the resulting working-diff fingerprint. An exit trap owns recovery while
+the patch is active; failed validation reverses the exact diff and requires a
+clean checkout before reporting `application-failed-restored`. Success reports
+`applied-tested` and leaves reviewed working-tree changes for the user. GHOST
+does not commit or push them.

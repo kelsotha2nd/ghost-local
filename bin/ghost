@@ -154,6 +154,7 @@ GHOST // COMMANDS
   ghost project diagnose [question] test and diagnose with the smart model
   ghost project prepare <change> create and test an isolated AI patch
   ghost project patch   review the latest prepared patch
+  ghost project apply   authorize and apply the prepared patch
   ghost audio           inspect audio devices and selection
   ghost benchmark [model] measure local model throughput
   ghost help            show this message

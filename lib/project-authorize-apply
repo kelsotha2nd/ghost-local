@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+
+set -o pipefail
+SOURCE="${BASH_SOURCE[0]}"; ROOT="$(cd -P "$(dirname "$SOURCE")/.." >/dev/null 2>&1 && pwd)"
+# shellcheck source=state
+source "$ROOT/lib/state"; ghost_state_init
+state_file="$GHOST_STATE_DIR/project-patch.json"
+[ -s "$state_file" ] || { echo "GHOST // prepared patch unavailable" >&2; exit 4; }
+{
+    flock -x 9
+    status="$(jq -r '.status // empty' "$state_file")"; consumed="$(jq -r 'if .application_challenge|has("consumed") then .application_challenge.consumed else true end' "$state_file")"
+    expiry="$(jq -r '.application_challenge.expires_epoch // 0' "$state_file")"; nonce="$(jq -r '.application_challenge.nonce // empty' "$state_file")"
+    [ "$status" = prepared-tested ] || { echo "GHOST // patch is not awaiting application" >&2; exit 5; }
+    [ "$consumed" = false ] && [ -n "$nonce" ] || { echo "GHOST // patch application challenge already consumed" >&2; exit 6; }
+    [ "$(date +%s)" -lt "$expiry" ] || { echo "GHOST // patch application challenge expired" >&2; exit 7; }
+    authorized_at="$(date --iso-8601=seconds)"; nonce_sha="$(printf %s "$nonce" | sha256sum | awk '{print $1}')"; temporary="$(mktemp "$GHOST_STATE_DIR/.project-patch.XXXXXX")"
+    jq --arg authorized_at "$authorized_at" --arg nonce_sha "$nonce_sha" \
+        '.status="application-authorized" | .application_authorization={authorized_at:$authorized_at,expires_epoch:.application_challenge.expires_epoch,nonce_sha256:$nonce_sha} | del(.application_challenge.nonce) | .application_challenge.consumed=true' \
+        "$state_file" > "$temporary"; chmod 600 "$temporary"; mv "$temporary" "$state_file"
+} 9> "$GHOST_STATE_LOCK"
+echo "GHOST // PREPARED PATCH APPLICATION AUTHORIZED"
+if [ "${GHOST_AUTHORIZE_PROJECT_APPLY:-0}" = 1 ]; then exec "$ROOT/lib/project-apply"; fi
+echo "  application: not run (authorization only)"
