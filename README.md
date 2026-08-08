@@ -452,6 +452,13 @@ wake gate, so Whisper still performs local transcription; a future acoustic wake
 detector can replace standby transcription without changing the downstream
 voice pipeline.
 
+After any successful addressed answer, wake mode opens a bounded 12-second
+conversation window. A follow-up inside that window does not need the wake name,
+and each successful reply renews the window. Silence closes it and restores the
+address gate. The window changes only transcript admission: typed capabilities,
+proposal state, and every deliberate execution or activation phrase remain
+unchanged and cannot be satisfied by conversational context.
+
 ## Resident presence
 
 `ghost presence start` launches the guarded wake session as the fixed transient

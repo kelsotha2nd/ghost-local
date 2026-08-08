@@ -48,4 +48,13 @@ sed -n '1p' "$GHOST_SESSION_ARMED_ARGS" | grep -qx '1 12'
 sed -n '2p' "$GHOST_SESSION_ARMED_ARGS" | grep -qx '0 6'
 sed -n '3p' "$GHOST_SESSION_ARMED_ARGS" | grep -qx '1 12'
 [[ "$armed_output" == *'follow-up window expired'* ]]
+
+conversation_runner="$temporary_root/conversation-runner"; conversation_count="$temporary_root/conversation-count"
+printf '%s\n' '#!/usr/bin/env bash' 'count=0; [ ! -f "$GHOST_SESSION_CONVERSATION_COUNT" ] || count="$(<"$GHOST_SESSION_CONVERSATION_COUNT")"' 'count=$((count + 1)); printf "%s\n" "$count" > "$GHOST_SESSION_CONVERSATION_COUNT"' 'printf "%s %s %s\n" "$GHOST_WAKE_REQUIRED" "$GHOST_CONVERSATION_TURN" "$GHOST_AUTO_INITIAL_TIMEOUT_SECONDS" >> "$GHOST_SESSION_CONVERSATION_ARGS"' '[ "$count" -le 2 ] && exit 68' '[ "$count" -eq 3 ] && exit 66' 'exit 65' > "$conversation_runner"
+chmod 755 "$conversation_runner"; export GHOST_SESSION_CONVERSATION_COUNT="$conversation_count" GHOST_SESSION_CONVERSATION_ARGS="$temporary_root/conversation.args"
+GHOST_SESSION_TEST_MODE=1 GHOST_SESSION_VOICE_RUNNER="$conversation_runner" GHOST_SESSION_ANNOUNCE=0 "$ROOT/lib/session" --wake >/dev/null
+sed -n '1p' "$GHOST_SESSION_CONVERSATION_ARGS" | grep -qx '1 0 12'
+sed -n '2p' "$GHOST_SESSION_CONVERSATION_ARGS" | grep -qx '0 1 12'
+sed -n '3p' "$GHOST_SESSION_CONVERSATION_ARGS" | grep -qx '0 1 12'
+sed -n '4p' "$GHOST_SESSION_CONVERSATION_ARGS" | grep -qx '1 0 12'
 echo "session tests passed"

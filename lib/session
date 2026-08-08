@@ -28,26 +28,34 @@ if [ "${GHOST_SESSION_ANNOUNCE:-1}" = 1 ]; then
     "$ROOT/lib/speak" "Voice session online." || true
 fi
 
-failures=0; wake_armed=0
+failures=0; wake_armed=""
 while [ "$running" -eq 1 ]; do
     turn_wake_required="$wake_required"
     turn_initial_timeout="${GHOST_AUTO_INITIAL_TIMEOUT_SECONDS:-12}"
-    if [ "$wake_armed" -eq 1 ]; then
+    conversation_turn=0
+    if [ -n "$wake_armed" ]; then
         turn_wake_required=0
-        turn_initial_timeout="${GHOST_WAKE_FOLLOWUP_SECONDS:-6}"
+        conversation_turn=1
+        if [ "$wake_armed" = prompt ]; then
+            turn_initial_timeout="${GHOST_WAKE_FOLLOWUP_SECONDS:-6}"
+        else
+            turn_initial_timeout="${GHOST_CONVERSATION_FOLLOWUP_SECONDS:-12}"
+        fi
     fi
     [[ "$turn_initial_timeout" =~ ^[1-9][0-9]*$ ]] || { echo "GHOST // invalid wake follow-up timeout" >&2; exit 2; }
-    GHOST_SESSION_MODE=1 GHOST_WAKE_REQUIRED="$turn_wake_required" \
+    GHOST_SESSION_MODE=1 GHOST_WAKE_SESSION="$wake_required" GHOST_WAKE_REQUIRED="$turn_wake_required" \
+        GHOST_CONVERSATION_TURN="$conversation_turn" \
         GHOST_AUTO_INITIAL_TIMEOUT_SECONDS="$turn_initial_timeout" "$runner" "${capture_args[@]}"
     voice_status=$?
     case "$voice_status" in
-        0) failures=0; wake_armed=0 ;;
+        0) failures=0; wake_armed="" ;;
         66)
             failures=0
-            if [ "$wake_armed" -eq 1 ]; then echo "GHOST // WAKE: follow-up window expired"; fi
-            wake_armed=0
+            if [ -n "$wake_armed" ]; then echo "GHOST // WAKE: follow-up window expired"; fi
+            wake_armed=""
             ;;
-        67) failures=0; wake_armed=1 ;;
+        67) failures=0; wake_armed=prompt ;;
+        68) failures=0; wake_armed=conversation ;;
         65) echo "GHOST // SESSION OFFLINE"; exit 0 ;;
         130|143) break ;;
         *)

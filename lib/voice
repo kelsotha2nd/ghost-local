@@ -44,6 +44,7 @@ echo "YOU: $transcript"
 GHOST_VOICE_COMMAND_SPEAK=1 "$ROOT/lib/voice-command" "$transcript"
 voice_command_status=$?
 if [ "$voice_command_status" -eq 0 ]; then
+    [ "${GHOST_WAKE_SESSION:-0}" = 1 ] && exit 68
     exit 0
 elif [ "$voice_command_status" -ne 64 ]; then
     exit "$voice_command_status"
@@ -81,5 +82,11 @@ if [ "$request_intent" = "inspect" ] || [[ "$request_intent" = *change ]]; then
         export GHOST_TOOL_CONTEXT="$tool_context"
         echo "GHOST // TOOLS: read-only evidence attached"
     fi
+fi
+if [ "${GHOST_WAKE_SESSION:-0}" = 1 ]; then
+    GHOST_SPEAK_RESPONSE=1 "$ROOT/lib/ask" "$transcript"
+    answer_status=$?
+    [ "$answer_status" -eq 0 ] && exit 68
+    exit "$answer_status"
 fi
 GHOST_SPEAK_RESPONSE=1 exec "$ROOT/lib/ask" "$transcript"
