@@ -414,8 +414,13 @@ turn still uses push-to-talk, automatic fast/smart routing, the same conversatio
 history, and every existing authorization boundary; the session adds no action
 authority. After GHOST speaks, it returns to listening for the next turn.
 
-The exact phrase `Ghost, go quiet` exits cleanly before the transcript reaches a
-model. Interrupt and termination signals also stop the loop. Isolated voice
+The phrase `Ghost, go quiet` exits cleanly before the transcript reaches a
+model. Because stopping a voice session is non-destructive, the local parser
+also accepts the explicit Whisper variants `Gus` for `Ghost` and `quite` for
+`quiet`. No machine-changing authorization phrase receives phonetic aliases.
+Other three-word near-matches are intercepted locally, reported as unconfirmed,
+and never reach a model that might falsely claim shutdown. Interrupt and
+termination signals also stop the loop. Isolated voice
 failures are reported and retried, while three consecutive failures halt the
 session instead of creating a capture or model retry storm. An optional numeric
 argument uses the existing timed-capture behavior. This resident loop is the

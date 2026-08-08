@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+
+phrase="${*,,}"
+phrase="${phrase%[.!?]}"
+phrase="${phrase//,/}"
+phrase="$(awk '{$1=$1; print}' <<< "$phrase")"
+
+if [[ "$phrase" =~ ^(ghost|gus)[[:space:]]+go[[:space:]]+(quiet|quite)$ ]]; then
+    echo quiet
+elif [[ "$phrase" =~ ^[a-z]+[[:space:]]+go[[:space:]]+(quiet|quite)$ ]]; then
+    echo near-quiet
+else
+    echo none
+fi

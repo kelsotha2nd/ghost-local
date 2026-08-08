@@ -3,6 +3,12 @@
 set -euo pipefail
 ROOT="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." >/dev/null 2>&1 && pwd)"
 temporary_root="$(mktemp -d /tmp/ghost-session-test.XXXXXX)"; trap 'rm -r "$temporary_root"' EXIT
+[ "$("$ROOT/lib/session-phrase" 'Ghost, go quiet.')" = quiet ]
+[ "$("$ROOT/lib/session-phrase" 'gus go quiet')" = quiet ]
+[ "$("$ROOT/lib/session-phrase" 'ghost go quite')" = quiet ]
+[ "$("$ROOT/lib/session-phrase" 'gus go quite')" = quiet ]
+[ "$("$ROOT/lib/session-phrase" 'dust go quite')" = near-quiet ]
+[ "$("$ROOT/lib/session-phrase" 'let us keep talking')" = none ]
 runner="$temporary_root/voice-runner"; counter="$temporary_root/count"
 printf '%s\n' '#!/usr/bin/env bash' 'count=0; [ ! -f "$GHOST_SESSION_TEST_COUNTER" ] || count="$(<"$GHOST_SESSION_TEST_COUNTER")"' 'count=$((count + 1)); printf "%s\n" "$count" > "$GHOST_SESSION_TEST_COUNTER"' '[ "$count" -eq 1 ] && exit 0' 'exit 65' > "$runner"
 chmod 755 "$runner"
