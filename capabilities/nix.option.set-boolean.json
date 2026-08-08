@@ -1,0 +1,11 @@
+{
+  "id": "nix.option.set-boolean",
+  "version": 1,
+  "title": "Set a registered NixOS boolean option",
+  "risk": "protected-network-change",
+  "target_kind": "registered-nixos-boolean-option",
+  "executor": "nixos-boolean-option-editor",
+  "validator": "nixos-full-evaluation",
+  "activation": "nixos-generation-switch",
+  "rollback": "trusted-file-backup-and-previous-generation"
+}

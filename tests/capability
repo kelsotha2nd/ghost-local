@@ -22,6 +22,7 @@ grep -q $'^package.remove\t' <<< "$capability_list"
 grep -q $'^service.restart\t' <<< "$capability_list"
 grep -q $'^service.enable\t' <<< "$capability_list"
 grep -q $'^service.disable\t' <<< "$capability_list"
+grep -q $'^nix.option.set-boolean\t' <<< "$capability_list"
 set +e
 "$ROOT/lib/capability" resolve 'rewrite my entire desktop' >/dev/null 2>&1
 unsupported_status=$?

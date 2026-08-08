@@ -20,7 +20,7 @@ intent="conversation"
 
 if [[ "$lower" =~ (wipe|erase|destroy|format[[:space:]]+(the[[:space:]]+)?(disk|drive|filesystem)|factory[[:space:]]+reset|reset[[:space:]]+--hard|delete[[:space:]]+(all|every|the[[:space:]]+system)) ]]; then
     intent="protected-change"
-elif [[ "$lower" =~ (fix|repair|implement|refactor|configure|rollback|restore|install|uninstall|remove|upgrade|update|deploy|commit|push|add|create|edit|modify|change|restart|enable|disable|execute|authorize|rebuild[[:space:]]+(my|the|this|nixos|system|machine|configuration)|run[[:space:]]+(a[[:space:]]+)?rebuild|write[[:space:]]+(a|the|some)?[[:space:]]*(code|script|module|config)) ]]; then
+elif [[ "$lower" =~ (fix|repair|implement|refactor|configure|rollback|restore|install|uninstall|remove|upgrade|update|deploy|commit|push|add|create|edit|modify|change|restart|enable|disable|execute|authorize|rebuild[[:space:]]+(my|the|this|nixos|system|machine|configuration)|run[[:space:]]+(a[[:space:]]+)?rebuild|write[[:space:]]+(a|the|some)?[[:space:]]*(code|script|module|config)|(open|close|allow|block)[[:space:]].*(firewall|port)) ]]; then
     intent="change"
 elif [[ "$lower" =~ (check|inspect|show|list|status|diagnos|debug|troubleshoot|investigat|analy[sz]e|audit|explain|service|daemon|systemd|ollama|process|why[[:space:]]|what[[:space:]]+is|how[[:space:]]+much) ]]; then
     intent="inspect"
@@ -38,7 +38,7 @@ case "$mode" in
         elif [[ "$lower" =~ (smart[[:space:]]+mode|use[[:space:]]+(the[[:space:]]+)?(smart|bigger|8b)[[:space:]]+model|think[[:space:]]+(hard|carefully|deeply)|take[[:space:]]+your[[:space:]]+time) ]]; then
             lane="smart"
             reason="explicit request"
-        elif [[ "$lower" =~ (fix|debug|diagnos|troubleshoot|investigat|repair|implement|refactor|configure|rebuild|rollback|restore|install|uninstall|upgrade|deploy|commit|push|audit|secure|optimi[sz]e|benchmark|plan|design|add|create|edit|modify|change|write[[:space:]]+(a|the|some)?[[:space:]]*(code|script|module|config)) ]]; then
+        elif [[ "$lower" =~ (fix|debug|diagnos|troubleshoot|investigat|repair|implement|refactor|configure|rebuild|rollback|restore|install|uninstall|upgrade|deploy|commit|push|audit|secure|optimi[sz]e|benchmark|plan|design|add|create|edit|modify|change|open|close|allow|block|write[[:space:]]+(a|the|some)?[[:space:]]*(code|script|module|config)) ]]; then
             lane="smart"
             reason="technical work"
         elif [[ "$lower" =~ (why[[:space:]]|how[[:space:]]+should|compare|analy[sz]e|explain|recommend|best[[:space:]]+way|trade.?off|root[[:space:]]+cause|step.?by.?step|what[[:space:]]+should[[:space:]]+we[[:space:]]+(do|build|change)) ]]; then

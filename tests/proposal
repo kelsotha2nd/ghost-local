@@ -77,4 +77,10 @@ printf '%s\n' \
     "Risk: Ollama stops after activation. Validation: full NixOS evaluation. Rollback: restore backup. Pending review." > "$toggle_plan"
 "$ROOT/lib/validate-proposal" "$toggle_plan" "disable ollama at boot"
 
+option_plan="$temporary_state/option-plan"
+printf '%s\n' \
+    "Scope: set services.ollama.openFirewall to true. Steps: edit the verified literal." \
+    "Risk: expose Ollama on the network. Validation: full NixOS evaluation. Rollback: restore backup. Pending review." > "$option_plan"
+"$ROOT/lib/validate-proposal" "$option_plan" "open the ollama firewall"
+
 echo "proposal tests passed"

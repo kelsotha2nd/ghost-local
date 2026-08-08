@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." >/dev/null 2>&1 && pwd)"
+temporary_root="$(mktemp -d /tmp/ghost-option-test.XXXXXX)"; trap 'rm -r "$temporary_root"' EXIT
+export GHOST_STATE_DIR="$temporary_root/state"
+export GHOST_NIX_CONFIG_PATH="$temporary_root/configuration.nix"
+export GHOST_NIX_GHOST_MODULE_PATH="$temporary_root/ghost.nix"
+export GHOST_CAPABILITY_TEST_MODE=1
+export GHOST_NIXOS_OPTION="$ROOT/tests/fixtures/fake-nixos-option"
+printf '%s\n' '{ ... }: { imports = [ ./ghost.nix ]; }' > "$GHOST_NIX_CONFIG_PATH"
+printf '%s\n' '{ ... }:' '{' '  services.ollama = {' '    enable = true;' '    openFirewall = false;' '  };' '}' > "$GHOST_NIX_GHOST_MODULE_PATH"
+# shellcheck source=../lib/state
+source "$ROOT/lib/state"; ghost_state_init
+descriptor="$("$ROOT/lib/capability" resolve 'open the ollama firewall')"
+[ "$(jq -r .id <<< "$descriptor")" = nix.option.set-boolean ]
+[ "$(jq -r .risk <<< "$descriptor")" = protected-network-change ]
+[ "$(jq -r .option <<< "$descriptor")" = services.ollama.openFirewall ]
+[ "$(jq -r .leaf <<< "$descriptor")" = openFirewall ]
+[ "$(jq -r .current <<< "$descriptor")" = false ] && [ "$(jq -r .desired <<< "$descriptor")" = true ]
+proposal_id="$(ghost_proposal_save 'open the ollama firewall' change 'Scope: services.ollama.openFirewall. Steps. Risk: network exposure. Validation. Rollback. Pending review.' "$descriptor")"
+"$ROOT/lib/stage" "$proposal_id" >/dev/null
+set +e
+"$ROOT/lib/voice-command" 'yes open it' >/dev/null 2>&1
+casual_status=$?
+set -e
+[ "$casual_status" -eq 64 ]
+output="$(GHOST_SERVICE_TOGGLE_TEST_MODE=1 GHOST_VERIFY_TEST_MODE=1 GHOST_SKIP_FULL_EVALUATION=1 "$ROOT/lib/voice-command" 'authorize nix option change.')"
+[[ "$output" == *'NIXOS EVALUATION PASSED'* ]]
+grep -q '^    enable = true;$' "$GHOST_NIX_GHOST_MODULE_PATH"
+grep -q '^    openFirewall = true;$' "$GHOST_NIX_GHOST_MODULE_PATH"
+[ "$(jq -r .execution.option "$GHOST_PROPOSAL_FILE")" = services.ollama.openFirewall ]
+[ "$(jq -r .status "$GHOST_PROPOSAL_FILE")" = fixture-validated ]
+
+printf '%s\n' '{ ... }:' '{' '  services.ollama = {' '    enable = true;' \
+    '    openFirewall = false;' '    openFirewall = true;' '  };' '}' > "$GHOST_NIX_GHOST_MODULE_PATH"
+set +e
+"$ROOT/lib/capability" resolve 'open the ollama firewall' >/dev/null 2>&1
+duplicate_status=$?
+set -e
+[ "$duplicate_status" -eq 4 ]
+printf '%s\n' '{ lib, ... }:' '{' '  services.ollama = {' '    enable = true;' \
+    '    openFirewall = lib.mkDefault false;' '  };' '}' > "$GHOST_NIX_GHOST_MODULE_PATH"
+set +e
+"$ROOT/lib/capability" resolve 'open the ollama firewall' >/dev/null 2>&1
+computed_status=$?
+set -e
+[ "$computed_status" -eq 4 ]
+echo "option tests passed"

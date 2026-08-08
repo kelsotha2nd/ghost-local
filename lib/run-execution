@@ -12,7 +12,7 @@ case "$capability_id" in
     service.restart)
         exec "$ROOT/lib/restart-service" "$proposal_id"
         ;;
-    service.enable|service.disable)
+    service.enable|service.disable|nix.option.set-boolean)
         "$ROOT/lib/toggle-service" "$proposal_id" || exit $?
         echo
         GHOST_PREPARE_ACTIVATION=1 exec "$ROOT/lib/verify" "$proposal_id"

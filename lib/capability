@@ -19,7 +19,28 @@ case "${1:-}" in
     resolve)
         shift
         request="$*"; lower="${request,,}"
-        if [[ "$lower" =~ (enable|disable)[[:space:]]+(the[[:space:]]+)?(service[[:space:]]+)?ollama([[:space:]]+(at|on)[[:space:]]+boot)? ]]; then
+        if [[ "$lower" =~ (open|enable|allow|close|disable|block)[[:space:]]+(the[[:space:]]+)?ollama[[:space:]]+(firewall|port) ]]; then
+            operation="${BASH_REMATCH[1]}"; desired=true
+            case "$operation" in close|disable|block) desired=false ;; esac
+            option=services.ollama.openFirewall; leaf=openFirewall
+            option_command=nixos-option
+            [ "${GHOST_CAPABILITY_TEST_MODE:-0}" = 1 ] && option_command="${GHOST_NIXOS_OPTION:-nixos-option}"
+            command -v "$option_command" >/dev/null 2>&1 || { echo "GHOST // nixos-option unavailable" >&2; exit 4; }
+            option_output="$("$option_command" "$option" 2>/dev/null || true)"
+            grep -q '^Type:$' <<< "$option_output" && grep -q '^  boolean$' <<< "$option_output" || { echo "GHOST // verified boolean NixOS option unavailable: $option" >&2; exit 4; }
+            target_path="${GHOST_NIX_GHOST_MODULE_PATH:-$HOME/.config/nixos/modules/ghost.nix}"
+            [ -f "$target_path" ] && [ ! -L "$target_path" ] || { echo "GHOST // known GHOST module unavailable" >&2; exit 4; }
+            current="$(awk -v leaf="$leaf" '
+                /^  services\.ollama = \{$/ {inside=1; next} inside && /^  \};$/ {inside=0}
+                inside {prefix="    " leaf " = "; if (index($0,prefix)==1) {line=substr($0,length(prefix)+1); sub(/;$/, "", line); if(line=="true"||line=="false"){print line; count++}}}
+                END {if(count!=1) exit 1}
+            ' "$target_path")" || { echo "GHOST // one explicit registered boolean was not found: $option" >&2; exit 4; }
+            [ "$current" != "$desired" ] || { echo "GHOST // $option is already $desired" >&2; exit 6; }
+            jq -cS --arg target "$option" --arg option "$option" --arg block services.ollama --arg leaf "$leaf" \
+                --arg target_path "$target_path" --arg current "$current" --arg desired "$desired" \
+                '. + {target:$target, option:$option, block:$block, leaf:$leaf, target_path:$target_path, current:($current=="true"), desired:($desired=="true")}' \
+                "$ROOT/capabilities/nix.option.set-boolean.json"
+        elif [[ "$lower" =~ (enable|disable)[[:space:]]+(the[[:space:]]+)?(service[[:space:]]+)?ollama([[:space:]]+(at|on)[[:space:]]+boot)? ]]; then
             operation="${BASH_REMATCH[1]}"; desired=true; [ "$operation" = disable ] && desired=false
             option=services.ollama.enable
             option_command=nixos-option
@@ -38,7 +59,7 @@ case "${1:-}" in
             [ "$current" != "$desired" ] || { echo "GHOST // services.ollama.enable is already $desired" >&2; exit 6; }
             jq -cS --arg target ollama.service --arg option "$option" --arg target_path "$target_path" \
                 --arg current "$current" --arg desired "$desired" \
-                '. + {target: $target, option: $option, target_path: $target_path, current: ($current == "true"), desired: ($desired == "true")}' \
+                '. + {target: $target, option: $option, block: "services.ollama", leaf: "enable", target_path: $target_path, current: ($current == "true"), desired: ($desired == "true")}' \
                 "$ROOT/capabilities/service.${operation}.json"
         elif [[ "$lower" =~ restart[[:space:]]+(the[[:space:]]+)?(service[[:space:]]+)?([a-zA-Z0-9@_.-]+) ]]; then
             unit="${BASH_REMATCH[3]}"

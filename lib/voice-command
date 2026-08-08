@@ -42,9 +42,25 @@ if [[ "$command" =~ ^(ghost[,[:space:]]+)?stage[[:space:]]+this[[:space:]]+propo
             "$ROOT/lib/speak" "The service restart is staged. Nothing has executed. To restart the verified unit, say authorize service restart." || true
         elif [ "$capability_id" = service.enable ] || [ "$capability_id" = service.disable ]; then
             "$ROOT/lib/speak" "The declarative service change is staged. Nothing has executed. To edit and evaluate the verified option, say authorize service change." || true
+        elif [ "$capability_id" = nix.option.set-boolean ]; then
+            "$ROOT/lib/speak" "The registered Nix option change is staged. Nothing has executed. To edit and evaluate the signed boolean, say authorize Nix option change." || true
         else
             "$ROOT/lib/speak" "The active proposal is staged. Nothing has executed. To perform the backed-up configuration edit without rebuilding, say authorize package edit." || true
         fi
+    fi
+    exit 0
+fi
+
+if [[ "$command" =~ ^(ghost[,[:space:]]+)?authorize[[:space:]]+nix[[:space:]]+option[[:space:]]+change$ ]]; then
+    # shellcheck source=state
+    source "$ROOT/lib/state"; ghost_state_init
+    [ "$(jq -r '.capability.id // empty' "$GHOST_PROPOSAL_FILE")" = nix.option.set-boolean ] || {
+        echo "GHOST // active proposal is not a registered Nix option change" >&2; exit 6;
+    }
+    proposal_id="$(jq -r '.id // empty' "$GHOST_PROPOSAL_FILE")"
+    GHOST_AUTHORIZE_EXECUTE="${GHOST_VOICE_COMMAND_EXECUTE:-1}" "$ROOT/lib/authorize" execution "$proposal_id" || exit $?
+    if [ "${GHOST_VOICE_COMMAND_SPEAK:-0}" = "1" ]; then
+        "$ROOT/lib/speak" "The registered Nix option was edited and fully evaluated. To activate it, say authorize system activation." || true
     fi
     exit 0
 fi

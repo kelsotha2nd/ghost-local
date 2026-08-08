@@ -296,3 +296,13 @@ flips only that signed boolean and enters the normal full-evaluation and system
 activation pipeline. Backup, activation, and guarded rollback are target-aware,
 so a module edit restores the module while independently proving
 `configuration.nix` remained unchanged.
+
+`nix.option.set-boolean` is the registered boolean-option engine. Its first
+allowlisted target is `services.ollama.openFirewall`, whose enabled state exposes
+Ollama's configured TCP port through the NixOS firewall. GHOST verifies the
+option type with `nixos-option`, requires one literal assignment in the signed
+module and refuses already-satisfied, missing, duplicate, or computed values.
+Because this target changes network exposure, its descriptor carries the
+`protected-network-change` risk class and requires the dedicated phrase
+`authorize Nix option change`. It then uses the normal evaluation, activation,
+and target-aware rollback pipeline. Arbitrary option paths remain unsupported.

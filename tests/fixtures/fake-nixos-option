@@ -1,3 +1,7 @@
 #!/usr/bin/env bash
-[ "${1:-}" = services.ollama.enable ] || exit 1
-printf '%s\n' 'Value:' '  true' '' 'Default:' '  false' '' 'Type:' '  boolean'
+case "${1:-}" in
+    services.ollama.enable) value=true ;;
+    services.ollama.openFirewall) value=false ;;
+    *) exit 1 ;;
+esac
+printf '%s\n' 'Value:' "  $value" '' 'Default:' '  false' '' 'Type:' '  boolean'

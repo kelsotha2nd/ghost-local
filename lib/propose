@@ -26,9 +26,9 @@ capability_descriptor="$("$ROOT/lib/capability" resolve "$request")" || {
 export GHOST_CAPABILITY_DESCRIPTOR="$capability_descriptor"
 
 tool_context="$("$ROOT/lib/inspect" --auto "$request")"
-if [ -n "$tool_context" ]; then
-    export GHOST_TOOL_CONTEXT="$tool_context"
-fi
+tool_context="${tool_context}${tool_context:+$'\n'}--- SIGNED CAPABILITY DESCRIPTOR ---
+${capability_descriptor}"
+export GHOST_TOOL_CONTEXT="$tool_context"
 
 export GHOST_MODEL_OVERRIDE="${GHOST_SMART_MODEL:-qwen3:8b}"
 export GHOST_MAX_TOKENS="${GHOST_PROPOSAL_MAX_TOKENS:-384}"
