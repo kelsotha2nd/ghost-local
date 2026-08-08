@@ -429,3 +429,9 @@ ends a turn after 1.3 seconds of trailing silence, and enforces a 30-second hard
 ceiling. A no-speech timeout returns to standby without invoking Whisper or
 counting as a session fault. Thresholds are configurable in `voice.env`; invalid
 or internally inconsistent limits are refused before capture begins.
+The default `-9 dB` speech boundary reflects measured peaks of approximately
+`-3.8 dB` for nearby speech and `-13 dB` for a soundbar playing at normal room
+volume. In the mixed-room test it rejected background dialogue while retaining
+and transcribing the nearby request. `GHOST_AUTO_DEBUG=1` reports only byte
+count, peak level, and recent silence events for recalibration; captured audio
+still follows normal deletion.
