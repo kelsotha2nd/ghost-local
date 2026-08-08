@@ -4,8 +4,8 @@ set -euo pipefail
 ROOT="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." >/dev/null 2>&1 && pwd)"
 temporary_root="$(mktemp -d /tmp/ghost-presence-test.XXXXXX)"; trap 'rm -r "$temporary_root"' EXIT
 fake_bin="$temporary_root/bin"; mkdir -p "$fake_bin"
-export GHOST_PRESENCE_TEST_ACTIVE="$temporary_root/active" GHOST_PRESENCE_TEST_ARGS="$temporary_root/args"
-printf '%s\n' '#!/usr/bin/env bash' 'case "$*" in *"is-active"*) [ -f "$GHOST_PRESENCE_TEST_ACTIVE" ];; *" stop "*) rm -f "$GHOST_PRESENCE_TEST_ACTIVE";; *" show "*) printf "%s\n" "MainPID=4242" "ActiveEnterTimestamp=test" "NRestarts=0";; *) exit 1;; esac' > "$fake_bin/systemctl"
+export GHOST_PRESENCE_TEST_ACTIVE="$temporary_root/active" GHOST_PRESENCE_TEST_ARGS="$temporary_root/args" GHOST_PRESENCE_TEST_DECLARED="$temporary_root/declared"
+printf '%s\n' '#!/usr/bin/env bash' 'case "$*" in *"is-active"*) [ -f "$GHOST_PRESENCE_TEST_ACTIVE" ];; *" cat "*) [ -f "$GHOST_PRESENCE_TEST_DECLARED" ];; *" start "*) touch "$GHOST_PRESENCE_TEST_ACTIVE";; *" stop "*) rm -f "$GHOST_PRESENCE_TEST_ACTIVE";; *" show "*) printf "%s\n" "MainPID=4242" "ActiveEnterTimestamp=test" "NRestarts=0";; *) exit 1;; esac' > "$fake_bin/systemctl"
 printf '%s\n' '#!/usr/bin/env bash' 'printf "%s\n" "$@" > "$GHOST_PRESENCE_TEST_ARGS"' 'touch "$GHOST_PRESENCE_TEST_ACTIVE"' > "$fake_bin/systemd-run"
 printf '%s\n' '#!/usr/bin/env bash' 'echo presence-journal-fixture' > "$fake_bin/journalctl"
 chmod 755 "$fake_bin/systemctl" "$fake_bin/systemd-run" "$fake_bin/journalctl"
@@ -20,4 +20,7 @@ again_output="$("$ROOT/lib/presence" start)"; [[ "$again_output" == *'already ac
 log_output="$("$ROOT/lib/presence" log)"; [ "$log_output" = presence-journal-fixture ]
 stop_output="$("$ROOT/lib/presence" stop)"; [[ "$stop_output" == *'PRESENCE: stopped'* ]]
 inactive_output="$("$ROOT/lib/presence" status)"; [[ "$inactive_output" == *'PRESENCE: inactive'* ]]
+touch "$GHOST_PRESENCE_TEST_DECLARED"; rm -f "$GHOST_PRESENCE_TEST_ARGS"
+declared_output="$("$ROOT/lib/presence" start)"; [[ "$declared_output" == *'PRESENCE: starting'* ]]
+[ -f "$GHOST_PRESENCE_TEST_ACTIVE" ]; [ ! -f "$GHOST_PRESENCE_TEST_ARGS" ]
 echo "presence tests passed"

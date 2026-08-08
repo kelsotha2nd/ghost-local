@@ -13,10 +13,14 @@ case "${1:-status}" in
         if systemctl --user is-active --quiet "$unit"; then
             echo "GHOST // PRESENCE: already active"; exit 0
         fi
-        systemd-run --user --quiet --collect --unit=ghost-presence \
-            --property=Type=exec --property=Restart=on-failure --property=RestartSec=3 \
-            --property=Nice=5 --property=CPUWeight=75 \
-            "$ROOT/lib/session" --wake || { echo "GHOST // presence service failed to start" >&2; exit 8; }
+        if systemctl --user cat "$unit" >/dev/null 2>&1; then
+            systemctl --user start "$unit" || { echo "GHOST // declared presence service failed to start" >&2; exit 8; }
+        else
+            systemd-run --user --quiet --collect --unit=ghost-presence \
+                --property=Type=exec --property=Restart=on-failure --property=RestartSec=3 \
+                --property=Nice=5 --property=CPUWeight=75 \
+                "$ROOT/lib/session" --wake || { echo "GHOST // presence service failed to start" >&2; exit 8; }
+        fi
         echo "GHOST // PRESENCE: starting"
         echo "  stop: ghost presence stop"
         ;;

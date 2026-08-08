@@ -469,6 +469,9 @@ Presence is deliberately opt-in and is not enabled at login or boot.
 
 `ghost presence status`, `stop`, and `log` inspect, stop, or show the bounded
 recent journal for that exact unit. Starting twice cannot create duplicate
-listeners. This service wrapper adds no voice authority: transcript wake gates,
+listeners. Before declarative installation, `start` creates the constrained
+transient unit; afterward it detects and starts the installed unit instead of
+colliding with its fixed name. This service wrapper adds no voice authority:
+transcript wake gates,
 typed capabilities, deliberate authorization phrases, workload limits, and task
 cancellation remain unchanged.
