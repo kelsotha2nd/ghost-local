@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+
+set -o pipefail
+SOURCE="${BASH_SOURCE[0]}"; ROOT="$(cd -P "$(dirname "$SOURCE")/.." >/dev/null 2>&1 && pwd)"
+
+runner="$ROOT/lib/voice"
+if [ "${GHOST_SESSION_TEST_MODE:-0}" = 1 ]; then
+    runner="${GHOST_SESSION_VOICE_RUNNER:-}"
+    case "$runner" in /tmp/*) [ -x "$runner" ] || exit 21 ;; *) exit 21 ;; esac
+fi
+failure_limit="${GHOST_SESSION_FAILURE_LIMIT:-3}"
+[[ "$failure_limit" =~ ^[1-9]$ ]] || { echo "GHOST // session failure limit must be between 1 and 9" >&2; exit 2; }
+
+running=1
+trap 'running=0' INT TERM
+echo "GHOST // SESSION ONLINE"
+echo "  push ENTER to close each capture"
+echo "  say: Ghost, go quiet"
+if [ "${GHOST_SESSION_ANNOUNCE:-1}" = 1 ]; then
+    "$ROOT/lib/speak" "Voice session online." || true
+fi
+
+failures=0
+while [ "$running" -eq 1 ]; do
+    GHOST_SESSION_MODE=1 "$runner" "$@"
+    voice_status=$?
+    case "$voice_status" in
+        0) failures=0 ;;
+        65) echo "GHOST // SESSION OFFLINE"; exit 0 ;;
+        130|143) break ;;
+        *)
+            failures=$((failures + 1))
+            echo "GHOST // SESSION FAULT: voice pipeline exited $voice_status ($failures/$failure_limit)" >&2
+            if [ "$failures" -ge "$failure_limit" ]; then
+                echo "GHOST // SESSION HALTED — repeated voice failures" >&2
+                exit "$voice_status"
+            fi
+            ;;
+    esac
+done
+echo "GHOST // SESSION OFFLINE"

@@ -406,3 +406,18 @@ If validation fails, the patch is reversed and the task records failure.
 Cancellation asks the workload governor to stop active heavy work, invalidates
 any prepared patch, and prevents a late model result from reviving the cancelled
 task.
+
+## Voice sessions
+
+`ghost session` keeps the existing voice pipeline resident across turns. Each
+turn still uses push-to-talk, automatic fast/smart routing, the same conversation
+history, and every existing authorization boundary; the session adds no action
+authority. After GHOST speaks, it returns to listening for the next turn.
+
+The exact phrase `Ghost, go quiet` exits cleanly before the transcript reaches a
+model. Interrupt and termination signals also stop the loop. Isolated voice
+failures are reported and retried, while three consecutive failures halt the
+session instead of creating a capture or model retry storm. An optional numeric
+argument uses the existing timed-capture behavior. This resident loop is the
+future integration point for wake-word and silence detection rather than a
+second voice architecture.

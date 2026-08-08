@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+ROOT="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." >/dev/null 2>&1 && pwd)"
+temporary_root="$(mktemp -d /tmp/ghost-session-test.XXXXXX)"; trap 'rm -r "$temporary_root"' EXIT
+runner="$temporary_root/voice-runner"; counter="$temporary_root/count"
+printf '%s\n' '#!/usr/bin/env bash' 'count=0; [ ! -f "$GHOST_SESSION_TEST_COUNTER" ] || count="$(<"$GHOST_SESSION_TEST_COUNTER")"' 'count=$((count + 1)); printf "%s\n" "$count" > "$GHOST_SESSION_TEST_COUNTER"' '[ "$count" -eq 1 ] && exit 0' 'exit 65' > "$runner"
+chmod 755 "$runner"
+export GHOST_SESSION_TEST_COUNTER="$counter"
+output="$(GHOST_SESSION_TEST_MODE=1 GHOST_SESSION_VOICE_RUNNER="$runner" GHOST_SESSION_ANNOUNCE=0 "$ROOT/lib/session")"
+[[ "$output" == *'SESSION ONLINE'* ]]
+[[ "$output" == *'SESSION OFFLINE'* ]]
+[ "$(<"$counter")" = 2 ]
+
+failing_runner="$temporary_root/failing-runner"
+printf '%s\n' '#!/usr/bin/env bash' 'exit 9' > "$failing_runner"; chmod 755 "$failing_runner"
+set +e
+failure_output="$(GHOST_SESSION_TEST_MODE=1 GHOST_SESSION_VOICE_RUNNER="$failing_runner" GHOST_SESSION_ANNOUNCE=0 GHOST_SESSION_FAILURE_LIMIT=2 "$ROOT/lib/session" 2>&1)"
+failure_status=$?
+set -e
+[ "$failure_status" -eq 9 ]
+[[ "$failure_output" == *'SESSION HALTED'* ]]
+echo "session tests passed"

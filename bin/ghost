@@ -45,6 +45,10 @@ case "${1:-}" in
         shift
         exec "$ROOT/lib/voice" "$@"
         ;;
+    session)
+        shift
+        exec "$ROOT/lib/session" "$@"
+        ;;
     route)
         shift
         exec "$ROOT/lib/route" --display "$@"
@@ -140,6 +144,7 @@ GHOST // COMMANDS
   ghost listen [seconds] push-to-talk or timed transcription
   ghost speak <text>    speak text through the local voice
   ghost voice [seconds] push-to-talk, answer, and speak
+  ghost session [seconds] keep the voice pipeline resident between turns
   ghost route <request> inspect automatic voice routing
   ghost inspect <target> run a whitelisted read-only inspection
   ghost propose <change> create and save a change proposal

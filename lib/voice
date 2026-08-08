@@ -14,6 +14,13 @@ if [ "$transcript" != "$raw_transcript" ]; then
 fi
 echo "YOU: $transcript"
 
+session_command="${transcript,,}"; session_command="${session_command%[.!?]}"
+if [ "${GHOST_SESSION_MODE:-0}" = 1 ] && [[ "$session_command" =~ ^(ghost[,[:space:]]+)?go[[:space:]]+quiet$ ]]; then
+    echo "GHOST // SESSION: quiet"
+    "$ROOT/lib/speak" "Going quiet." || true
+    exit 65
+fi
+
 GHOST_VOICE_COMMAND_SPEAK=1 "$ROOT/lib/voice-command" "$transcript"
 voice_command_status=$?
 if [ "$voice_command_status" -eq 0 ]; then
