@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+
+set -o pipefail
+SOURCE="${BASH_SOURCE[0]}"; ROOT="$(cd -P "$(dirname "$SOURCE")/.." >/dev/null 2>&1 && pwd)"
+unit="ghost-presence.service"
+
+for dependency in systemctl systemd-run; do
+    command -v "$dependency" >/dev/null 2>&1 || { echo "GHOST // missing presence dependency: $dependency" >&2; exit 3; }
+done
+
+case "${1:-status}" in
+    start)
+        if systemctl --user is-active --quiet "$unit"; then
+            echo "GHOST // PRESENCE: already active"; exit 0
+        fi
+        systemd-run --user --quiet --collect --unit=ghost-presence \
+            --property=Type=exec --property=Restart=on-failure --property=RestartSec=3 \
+            --property=Nice=5 --property=CPUWeight=75 \
+            "$ROOT/lib/session" --wake || { echo "GHOST // presence service failed to start" >&2; exit 8; }
+        echo "GHOST // PRESENCE: starting"
+        echo "  stop: ghost presence stop"
+        ;;
+    status)
+        if systemctl --user is-active --quiet "$unit"; then
+            echo "GHOST // PRESENCE: active"
+            systemctl --user show "$unit" --no-pager \
+                --property=MainPID --property=ActiveEnterTimestamp --property=NRestarts |
+                sed 's/^/  /'
+        else
+            echo "GHOST // PRESENCE: inactive"
+        fi
+        ;;
+    stop)
+        if systemctl --user is-active --quiet "$unit"; then
+            systemctl --user stop "$unit" || exit $?
+            echo "GHOST // PRESENCE: stopped"
+        else
+            echo "GHOST // PRESENCE: already inactive"
+        fi
+        ;;
+    log)
+        command -v journalctl >/dev/null 2>&1 || { echo "GHOST // missing presence dependency: journalctl" >&2; exit 3; }
+        log_lines="${GHOST_PRESENCE_LOG_LINES:-80}"
+        [[ "$log_lines" =~ ^[1-9][0-9]*$ ]] || { echo "GHOST // presence log lines must be positive" >&2; exit 2; }
+        exec journalctl --user-unit "$unit" --no-pager -n "$log_lines"
+        ;;
+    *) echo "usage: ghost presence <start|status|stop|log>" >&2; exit 2 ;;
+esac

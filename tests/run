@@ -4,7 +4,7 @@ set -euo pipefail
 
 ROOT="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." >/dev/null 2>&1 && pwd)"
 
-for test_name in normalize route inspect workload project project-prepare task session vad capability proposal approve challenge execute service service-toggle option verify activation rollback shadow; do
+for test_name in normalize route inspect workload project project-prepare task session vad presence capability proposal approve challenge execute service service-toggle option verify activation rollback shadow; do
     "$ROOT/tests/$test_name"
 done
 

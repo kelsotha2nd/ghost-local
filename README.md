@@ -451,3 +451,17 @@ silence reports expiry and returns to guarded standby. This is a transcript-leve
 wake gate, so Whisper still performs local transcription; a future acoustic wake
 detector can replace standby transcription without changing the downstream
 voice pipeline.
+
+## Resident presence
+
+`ghost presence start` launches the guarded wake session as the fixed transient
+user unit `ghost-presence.service`, returning the terminal immediately. The unit
+runs without root at reduced CPU priority and weight, restarts only after an
+unexpected failure, and exits normally when the quiet phrase is recognized.
+Presence is deliberately opt-in and is not enabled at login or boot.
+
+`ghost presence status`, `stop`, and `log` inspect, stop, or show the bounded
+recent journal for that exact unit. Starting twice cannot create duplicate
+listeners. This service wrapper adds no voice authority: transcript wake gates,
+typed capabilities, deliberate authorization phrases, workload limits, and task
+cancellation remain unchanged.

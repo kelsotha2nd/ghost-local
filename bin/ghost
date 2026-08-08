@@ -49,6 +49,10 @@ case "${1:-}" in
         shift
         exec "$ROOT/lib/session" "$@"
         ;;
+    presence)
+        shift
+        exec "$ROOT/lib/presence" "$@"
+        ;;
     route)
         shift
         exec "$ROOT/lib/route" --display "$@"
@@ -145,6 +149,10 @@ GHOST // COMMANDS
   ghost speak <text>    speak text through the local voice
   ghost voice [seconds|--auto] capture, answer, and speak
   ghost session [seconds|--auto|--wake] keep the voice pipeline resident between turns
+  ghost presence start  run the guarded wake session as a user service
+  ghost presence status inspect the resident voice presence
+  ghost presence stop   stop the resident voice presence
+  ghost presence log    show recent resident voice events
   ghost route <request> inspect automatic voice routing
   ghost inspect <target> run a whitelisted read-only inspection
   ghost propose <change> create and save a change proposal
