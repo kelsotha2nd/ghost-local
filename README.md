@@ -349,3 +349,12 @@ the patch is active; failed validation reverses the exact diff and requires a
 clean checkout before reporting `application-failed-restored`. Success reports
 `applied-tested` and leaves reviewed working-tree changes for the user. GHOST
 does not commit or push them.
+
+Patch preparation includes a bounded automatic revision loop. By default GHOST
+gets two total attempts. When a patch applies but fails isolated tests, GHOST
+reverses it inside the temporary worktree, requires that worktree to return
+clean, and supplies the failed diff plus the last test output to the smart model
+for one corrected attempt. The corrected patch must pass the same context/path,
+apply, and full-test gates; feedback never broadens its file authority. Only the
+final passing diff is saved and challenged for application. The attempt count is
+recorded with the prepared patch, and the limit can never exceed three.

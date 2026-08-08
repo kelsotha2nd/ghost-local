@@ -68,8 +68,14 @@ set -e
 grep -q '^echo old$' "$fixture_repo/app.sh"
 [ "$(git -C "$fixture_repo" worktree list --porcelain | grep -c '^worktree ')" -eq 1 ]
 
-GHOST_PROJECT_PREPARE_TEST_MODE=1 GHOST_PROJECT_PATCH_FIXTURE="$ROOT/tests/fixtures/project-change.diff" \
-    "$ROOT/lib/project-prepare" "$fixture_repo" 'change old to new' >/dev/null
+revision_dir="$temporary_root/revisions"; mkdir -p "$revision_dir"
+cp "$failing_patch" "$revision_dir/attempt-1.diff"
+cp "$ROOT/tests/fixtures/project-change.diff" "$revision_dir/attempt-2.diff"
+revision_output="$(GHOST_PROJECT_PREPARE_TEST_MODE=1 GHOST_PROJECT_PATCH_FIXTURE_DIR="$revision_dir" \
+    "$ROOT/lib/project-prepare" "$fixture_repo" 'change old to new')"
+[[ "$revision_output" == *'REVISION 2'* ]]
+[[ "$revision_output" == *'ISOLATED PATCH PREPARED AND TESTED'* ]]
+[ "$(jq -r .attempts "$GHOST_STATE_DIR/project-patch.json")" = 2 ]
 set +e
 GHOST_PROJECT_APPLY_TEST_MODE=1 GHOST_PROJECT_APPLY_FORCE_TEST_FAILURE=1 \
     GHOST_AUTHORIZE_PROJECT_APPLY=1 "$ROOT/lib/project-authorize-apply" >/dev/null 2>&1

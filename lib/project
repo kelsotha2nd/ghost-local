@@ -85,7 +85,7 @@ ${test_output}"
         [ -s "$patch_file" ] && [ "$(sha256sum "$patch_file" | awk '{print $1}')" = "$expected" ] || {
             echo "GHOST // prepared patch fingerprint mismatch" >&2; exit 5;
         }
-        jq -r '"GHOST // PREPARED PROJECT PATCH\n  id: \(.id)\n  status: \(.status)\n  base: \(.head[0:12])\n  request: \(.request)\n  files: \(.files | join(", "))\n"' "$GHOST_STATE_DIR/project-patch.json"
+        jq -r '"GHOST // PREPARED PROJECT PATCH\n  id: \(.id)\n  status: \(.status)\n  base: \(.head[0:12])\n  attempts: \(.attempts // 1)\n  request: \(.request)\n  files: \(.files | join(", "))\n"' "$GHOST_STATE_DIR/project-patch.json"
         sed -n '1,320p' "$patch_file"
         ;;
     apply)

@@ -44,28 +44,46 @@ if [ "$count" -eq 0 ]; then
     done
 fi
 
-raw_patch="$(mktemp /tmp/ghost-project-raw-patch.XXXXXX)"; trap 'rm -f "$raw_patch"; cleanup' EXIT
-if [ "$test_mode" = 1 ]; then
-    [ -s "${GHOST_PROJECT_PATCH_FIXTURE:-}" ] || { echo "GHOST // patch fixture unavailable" >&2; exit 21; }
-    cp "$GHOST_PROJECT_PATCH_FIXTURE" "$raw_patch"
-else
-    "$ROOT/lib/project-patch-model" "$request" "$context_file" > "$raw_patch" || exit $?
-fi
-grep -q '^diff --git a/.* b/' "$raw_patch" || { echo "GHOST // model did not return a unified Git diff" >&2; exit 10; }
-changed_files=()
-while IFS= read -r header; do
-    path="${header#+++ }"; [ "$path" = /dev/null ] && continue; path="${path#b/}"
-    [[ "$path" =~ ^[A-Za-z0-9._/-]+$ ]] && [[ "/$path/" != *"/../"* ]] || { echo "GHOST // unsafe patch path: $path" >&2; exit 11; }
-    case "$path" in .git/*|.ghost/*|config/model.env|config/voice.env|memory/*) echo "GHOST // protected patch path: $path" >&2; exit 11 ;; esac
-    [[ "$selected" == *$'\n'"$path"$'\n'* ]] || { echo "GHOST // patch path was not present in model context: $path" >&2; exit 11; }
-    changed_files+=("$path")
-done < <(grep '^+++ ' "$raw_patch")
-[ "${#changed_files[@]}" -gt 0 ] || { echo "GHOST // patch contains no changed files" >&2; exit 10; }
-git -C "$worktree" apply --check "$raw_patch" || { echo "GHOST // generated patch does not apply cleanly" >&2; exit 12; }
-git -C "$worktree" apply "$raw_patch" || exit 12
-test_log="$(mktemp /tmp/ghost-project-test.XXXXXX)"; trap 'rm -f "$raw_patch" "$test_log"; cleanup' EXIT
-(cd "$worktree" && ./tests/run) > "$test_log" 2>&1; test_status=$?
-[ "$test_status" -eq 0 ] || { echo "GHOST // isolated patch tests failed; active checkout unchanged" >&2; tail -n 30 "$test_log" >&2; exit 13; }
+raw_patch="$(mktemp /tmp/ghost-project-raw-patch.XXXXXX)"; test_log="$(mktemp /tmp/ghost-project-test.XXXXXX)"; feedback_file="$(mktemp /tmp/ghost-project-feedback.XXXXXX)"
+trap 'rm -f "$raw_patch" "$test_log" "$feedback_file"; cleanup' EXIT
+max_attempts="${GHOST_PROJECT_PATCH_ATTEMPTS:-2}"; [[ "$max_attempts" =~ ^[1-3]$ ]] || { echo "GHOST // patch attempts must be between 1 and 3" >&2; exit 3; }
+attempt=1
+while [ "$attempt" -le "$max_attempts" ]; do
+    : > "$raw_patch"; : > "$test_log"
+    if [ "$test_mode" = 1 ]; then
+        fixture="${GHOST_PROJECT_PATCH_FIXTURE:-}"
+        [ -n "${GHOST_PROJECT_PATCH_FIXTURE_DIR:-}" ] && fixture="$GHOST_PROJECT_PATCH_FIXTURE_DIR/attempt-${attempt}.diff"
+        [ -s "$fixture" ] || { echo "GHOST // patch fixture unavailable for attempt $attempt" >&2; exit 21; }
+        cp "$fixture" "$raw_patch"
+    else
+        "$ROOT/lib/project-patch-model" "$request" "$context_file" "$feedback_file" > "$raw_patch" || exit $?
+    fi
+    grep -q '^diff --git a/.* b/' "$raw_patch" || { echo "GHOST // model did not return a unified Git diff" >&2; exit 10; }
+    changed_files=()
+    while IFS= read -r header; do
+        path="${header#+++ }"; [ "$path" = /dev/null ] && continue; path="${path#b/}"
+        [[ "$path" =~ ^[A-Za-z0-9._/-]+$ ]] && [[ "/$path/" != *"/../"* ]] || { echo "GHOST // unsafe patch path: $path" >&2; exit 11; }
+        case "$path" in .git/*|.ghost/*|config/model.env|config/voice.env|memory/*) echo "GHOST // protected patch path: $path" >&2; exit 11 ;; esac
+        [[ "$selected" == *$'\n'"$path"$'\n'* ]] || { echo "GHOST // patch path was not present in model context: $path" >&2; exit 11; }
+        changed_files+=("$path")
+    done < <(grep '^+++ ' "$raw_patch")
+    [ "${#changed_files[@]}" -gt 0 ] || { echo "GHOST // patch contains no changed files" >&2; exit 10; }
+    git -C "$worktree" apply --check "$raw_patch" || { echo "GHOST // generated patch does not apply cleanly" >&2; exit 12; }
+    git -C "$worktree" apply "$raw_patch" || exit 12
+    (cd "$worktree" && ./tests/run) > "$test_log" 2>&1; test_status=$?
+    [ "$test_status" -eq 0 ] && break
+    git -C "$worktree" apply -R --check "$raw_patch" && git -C "$worktree" apply -R "$raw_patch" || {
+        echo "GHOST // CRITICAL: failed isolated patch could not be reversed" >&2; exit 14;
+    }
+    [ -z "$(git -C "$worktree" status --porcelain=v1)" ] || { echo "GHOST // isolated worktree did not return clean" >&2; exit 14; }
+    if [ "$attempt" -ge "$max_attempts" ]; then
+        echo "GHOST // isolated patch tests failed after $attempt attempt(s); active checkout unchanged" >&2
+        tail -n 30 "$test_log" >&2; exit 13
+    fi
+    { echo "FAILED PATCH:"; sed -n '1,600p' "$raw_patch"; echo; echo "TEST OUTPUT:"; tail -n 80 "$test_log"; } > "$feedback_file"
+    attempt=$((attempt + 1))
+    echo "GHOST // REVISION $attempt — previous patch failed isolated tests"
+done
 patch_id="$(date +%Y%m%d-%H%M%S)"; saved_patch="$GHOST_STATE_DIR/project-patch-${patch_id}.diff"; saved_log="$GHOST_STATE_DIR/project-patch-${patch_id}.test.log"
 cp "$raw_patch" "$saved_patch"; cp "$test_log" "$saved_log"; chmod 600 "$saved_patch" "$saved_log"
 patch_sha="$(sha256sum "$saved_patch" | awk '{print $1}')"; created_at="$(date --iso-8601=seconds)"
@@ -74,11 +92,12 @@ expires_epoch="$(( $(date +%s) + challenge_ttl ))"; expires_at="$(date --date="@
 jq -n --arg id "$patch_id" --arg created_at "$created_at" --arg project_root "$project_root" --arg head "$head_commit" \
     --arg request "$request" --arg patch "$saved_patch" --arg patch_sha256 "$patch_sha" --arg test_log "$saved_log" --arg nonce "$nonce" --arg expires_at "$expires_at" --argjson expires_epoch "$expires_epoch" \
     --argjson files "$(printf '%s\n' "${changed_files[@]}" | jq -R . | jq -s .)" \
-    '{id:$id,created_at:$created_at,status:"prepared-tested",project_root:$project_root,head:$head,request:$request,patch:$patch,patch_sha256:$patch_sha256,test_log:$test_log,files:$files,
+    --argjson attempts "$attempt" \
+    '{id:$id,created_at:$created_at,status:"prepared-tested",project_root:$project_root,head:$head,request:$request,patch:$patch,patch_sha256:$patch_sha256,test_log:$test_log,files:$files,attempts:$attempts,
       application_challenge:{nonce:$nonce,expires_at:$expires_at,expires_epoch:$expires_epoch,consumed:false}}' \
     > "$GHOST_STATE_DIR/project-patch.json"; chmod 600 "$GHOST_STATE_DIR/project-patch.json"
 echo "GHOST // ISOLATED PATCH PREPARED AND TESTED"
-echo "  id: $patch_id"; echo "  base: ${head_commit:0:12}"; echo "  files: ${#changed_files[@]}"; echo "  active checkout: unchanged"
+echo "  id: $patch_id"; echo "  base: ${head_commit:0:12}"; echo "  attempts: $attempt"; echo "  files: ${#changed_files[@]}"; echo "  active checkout: unchanged"
 echo "  apply challenge expires: $expires_at"
 echo; sed -n '1,240p' "$saved_patch"
 echo; echo "To apply this tested patch, say exactly:"; echo "authorize prepared patch"
