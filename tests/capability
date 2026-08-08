@@ -13,8 +13,12 @@ printf '%s\n' '{ ... }: { }' > "$GHOST_NIX_GHOST_MODULE_PATH"
 descriptor="$("$ROOT/lib/capability" resolve 'install the package htop')"
 [ "$(jq -r .id <<< "$descriptor")" = package.add ]
 [ "$(jq -r .target <<< "$descriptor")" = htop ]
+remove_descriptor="$("$ROOT/lib/capability" resolve 'uninstall the package curl')"
+[ "$(jq -r .id <<< "$remove_descriptor")" = package.remove ]
+[ "$(jq -r .target <<< "$remove_descriptor")" = curl ]
 capability_list="$("$ROOT/lib/capability" list)"
 grep -q $'^package.add\t' <<< "$capability_list"
+grep -q $'^package.remove\t' <<< "$capability_list"
 set +e
 "$ROOT/lib/capability" resolve 'rewrite my entire desktop' >/dev/null 2>&1
 unsupported_status=$?

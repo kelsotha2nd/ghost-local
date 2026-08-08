@@ -58,4 +58,11 @@ printf '%s\n' \
 "$ROOT/lib/validate-proposal" "$with_plan" "add htop to configuration.nix"
 "$ROOT/lib/validate-proposal" "$with_plan" "add the package htop to configuration.nix"
 
+remove_plan="$temporary_state/remove-plan"
+printf '%s\n' \
+    "Scope: remove pkgs.curl. Steps: edit $HOME/.config/nixos/configuration.nix." \
+    "Risk: package unavailable. Validation: nix-instantiate --parse $HOME/.config/nixos/configuration.nix." \
+    "Rollback: restore the exact backup. Pending review." > "$remove_plan"
+"$ROOT/lib/validate-proposal" "$remove_plan" "remove the package curl"
+
 echo "proposal tests passed"

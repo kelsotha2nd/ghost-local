@@ -270,3 +270,9 @@ cryptographic digest. Changing either the action type or target after proposal
 creation invalidates every later gate. Model-generated prose remains useful for
 explaining scope and risk, but it is not executable authority. Descriptor-free
 legacy proposals are accepted only by isolated `/tmp` test fixtures.
+
+`package.remove` is a separate installed capability. It removes only an exact,
+standalone package entry from the existing `environment.systemPackages` block;
+an absent target or a composed Nix expression is refused. It uses the same
+trusted backup, full-system evaluation, deliberate activation, and generation
+rollback chain as package addition.

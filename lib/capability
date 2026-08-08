@@ -19,7 +19,10 @@ case "${1:-}" in
     resolve)
         shift
         request="$*"; lower="${request,,}"
-        if [[ "$lower" =~ (add|install)[[:space:]]+(the[[:space:]]+)?(package[[:space:]]+)?([a-z0-9][a-z0-9+._-]*) ]]; then
+        if [[ "$lower" =~ (remove|uninstall)[[:space:]]+(the[[:space:]]+)?(package[[:space:]]+)?([a-z0-9][a-z0-9+._-]*) ]]; then
+            package="${BASH_REMATCH[4]}"
+            jq -cS --arg target "$package" '. + {target: $target}' "$ROOT/capabilities/package.remove.json"
+        elif [[ "$lower" =~ (add|install)[[:space:]]+(the[[:space:]]+)?(package[[:space:]]+)?([a-z0-9][a-z0-9+._-]*) ]]; then
             package="${BASH_REMATCH[4]}"
             jq -cS --arg target "$package" '. + {target: $target}' "$ROOT/capabilities/package.add.json"
         else

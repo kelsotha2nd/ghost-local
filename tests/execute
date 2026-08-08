@@ -50,8 +50,32 @@ grep -Eq '^[[:space:]]+htop$' "$GHOST_NIX_CONFIG_PATH"
 [ "$(jq -r '.execution.activation' "$GHOST_PROPOSAL_FILE")" = "not-run" ]
 [ -s "$(jq -r '.execution.backup' "$GHOST_PROPOSAL_FILE")" ]
 
+write_fixture
+remove_descriptor="$("$ROOT/lib/capability" resolve 'remove the package curl')"
+remove_id="$(ghost_proposal_save \
+    "remove the package curl" "change" \
+    "Scope. Steps. Risk. Validation. Rollback. Pending review." "$remove_descriptor")"
+authorize_for_execution "$remove_id"
+remove_output="$(GHOST_EXECUTOR_TEST_MODE=1 "$ROOT/lib/execute" "$remove_id")"
+[[ "$remove_output" == *"action:     removed"* ]]
+! grep -Eq '^[[:space:]]+curl$' "$GHOST_NIX_CONFIG_PATH"
+[ "$(jq -r '.execution.action' "$GHOST_PROPOSAL_FILE")" = removed ]
+grep -Eq '^[[:space:]]+curl$' "$(jq -r '.execution.backup' "$GHOST_PROPOSAL_FILE")"
+
+absent_descriptor="$("$ROOT/lib/capability" resolve 'remove htop')"
+absent_id="$(ghost_proposal_save \
+    "remove htop" "change" \
+    "Scope. Steps. Risk. Validation. Rollback. Pending review." "$absent_descriptor")"
+authorize_for_execution "$absent_id"
+set +e
+GHOST_EXECUTOR_TEST_MODE=1 "$ROOT/lib/execute" "$absent_id" >/dev/null 2>&1
+absent_status=$?
+set -e
+[ "$absent_status" -eq 14 ]
+
+write_fixture
 duplicate_id="$(ghost_proposal_save \
-    "add htop to configuration.nix" "change" \
+    "add curl to configuration.nix" "change" \
     "Scope. Steps. Risk. Validation. Rollback. Pending review.")"
 authorize_for_execution "$duplicate_id"
 set +e

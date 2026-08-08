@@ -129,9 +129,13 @@ fi
         if [[ "$request_lower" =~ (add|install)[[:space:]]+(the[[:space:]]+)?(package[[:space:]]+)?([a-z0-9][a-z0-9+._-]*) ]]; then
             capability_id=package.add
             package="${BASH_REMATCH[4]}"
+        elif [[ "$request_lower" =~ (remove|uninstall)[[:space:]]+(the[[:space:]]+)?(package[[:space:]]+)?([a-z0-9][a-z0-9+._-]*) ]]; then
+            capability_id=package.remove
+            package="${BASH_REMATCH[4]}"
         fi
     fi
-    [ "$capability_id" = package.add ] && [[ "$package" =~ ^[a-z0-9][a-z0-9+._-]*$ ]] || {
+    case "$capability_id" in package.add) action=added ;; package.remove) action=removed ;; *) action=invalid ;; esac
+    [ "$action" != invalid ] && [[ "$package" =~ ^[a-z0-9][a-z0-9+._-]*$ ]] || {
         echo "GHOST // unsupported or invalid typed capability" >&2
         exit 12
     }
@@ -141,6 +145,7 @@ fi
         exit 13
     fi
 
+    package_present=0
     if awk -v package="$package" '
         /^[[:space:]]*environment\.systemPackages = with pkgs; \[/ {inside=1; next}
         inside && /^[[:space:]]*\];/ {inside=0}
@@ -152,8 +157,12 @@ fi
         }
         END {exit !found}
     ' "$GHOST_NIX_CONFIG_PATH"; then
-        echo "GHOST // package already present: $package" >&2
-        exit 14
+        package_present=1
+    fi
+    if [ "$capability_id" = package.add ] && [ "$package_present" -eq 1 ]; then
+        echo "GHOST // package already present: $package" >&2; exit 14
+    elif [ "$capability_id" = package.remove ] && [ "$package_present" -eq 0 ]; then
+        echo "GHOST // exact standalone package entry not present: $package" >&2; exit 14
     fi
 
     backup_dir="$GHOST_STATE_DIR/backups"
@@ -166,18 +175,28 @@ fi
     original_sha256="$(ghost_file_fingerprint "$GHOST_NIX_CONFIG_PATH")"
     edited="$(mktemp "$(dirname "$GHOST_NIX_CONFIG_PATH")/.ghost-edit.XXXXXX")"
 
-    if ! awk -v package="$package" '
-        /^[[:space:]]*environment\.systemPackages = with pkgs; \[/ && !inserted {
-            print
-            match($0, /^[[:space:]]*/)
-            indent=substr($0, RSTART, RLENGTH) "  "
-            print indent package
-            inserted=1
-            next
-        }
-        {print}
-        END {if (!inserted) exit 42}
-    ' "$GHOST_NIX_CONFIG_PATH" > "$edited"; then
+    edit_ok=1
+    if [ "$capability_id" = package.add ]; then
+        awk -v package="$package" '
+            /^[[:space:]]*environment\.systemPackages = with pkgs; \[/ && !inserted {
+                print; match($0, /^[[:space:]]*/); indent=substr($0, RSTART, RLENGTH) "  "; print indent package; inserted=1; next
+            }
+            {print}
+            END {if (!inserted) exit 42}
+        ' "$GHOST_NIX_CONFIG_PATH" > "$edited" || edit_ok=0
+    else
+        awk -v package="$package" '
+            /^[[:space:]]*environment\.systemPackages = with pkgs; \[/ {inside=1; print; next}
+            inside && /^[[:space:]]*\];/ {inside=0; print; next}
+            inside {
+                line=$0; sub(/[[:space:]]*#.*/, "", line); gsub(/^[[:space:]]+|[[:space:]]+$/, "", line)
+                if (line == package && !removed) {removed=1; next}
+            }
+            {print}
+            END {if (!removed) exit 42}
+        ' "$GHOST_NIX_CONFIG_PATH" > "$edited" || edit_ok=0
+    fi
+    if [ "$edit_ok" -ne 1 ]; then
         cp -p "$backup" "$GHOST_NIX_CONFIG_PATH"
         chmod "$original_mode" "$GHOST_NIX_CONFIG_PATH"
         echo "GHOST // expected systemPackages block not found; restored backup" >&2
@@ -216,11 +235,11 @@ fi
         execution_status="executed-awaiting-activation"
         execution_event="configuration-edited"
     fi
-    jq --arg status "$execution_status" --arg executed_at "$executed_at" --arg package "$package" \
+    jq --arg status "$execution_status" --arg executed_at "$executed_at" --arg package "$package" --arg action "$action" \
         --arg backup "$backup" --arg post_sha256 "$post_sha256" \
         --arg original_mode "$original_mode" \
         '.status = $status |
-         .execution = {executed_at: $executed_at, package: $package,
+         .execution = {executed_at: $executed_at, action: $action, package: $package,
                        backup: $backup, post_sha256: $post_sha256,
                        original_mode: $original_mode,
                        activation: "not-run"}' \
@@ -229,11 +248,11 @@ fi
     mv "$proposal_temporary" "$GHOST_PROPOSAL_FILE"
 
     jq -cn --arg event "$execution_event" --arg proposal_id "$stored_id" \
-        --arg digest "$digest" --arg package "$package" \
+        --arg digest "$digest" --arg package "$package" --arg action "$action" \
         --arg executed_at "$executed_at" --arg backup "$backup" \
         --arg post_sha256 "$post_sha256" \
         '{event: $event, proposal_id: $proposal_id, digest: $digest,
-          package: $package, executed_at: $executed_at, backup: $backup,
+          action: $action, package: $package, executed_at: $executed_at, backup: $backup,
           post_sha256: $post_sha256, activation: "not-run"}' \
         >> "$GHOST_APPROVAL_AUDIT_FILE"
 } 9> "$GHOST_STATE_LOCK"
@@ -244,6 +263,7 @@ else
     echo "GHOST // CONFIGURATION EDITED AND VALIDATED"
 fi
 echo "  package:    $package"
+echo "  action:     $action"
 echo "  syntax:     valid"
 echo "  backup:     $backup"
 echo "  activation: not run"

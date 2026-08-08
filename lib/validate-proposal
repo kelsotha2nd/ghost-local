@@ -65,5 +65,12 @@ if [[ "$request_lower" =~ (add|install)[[:space:]]+(the[[:space:]]+)?(package[[:
         exit 1
     fi
 fi
+if [[ "$request_lower" =~ (remove|uninstall)[[:space:]]+(the[[:space:]]+)?(package[[:space:]]+)?([a-z0-9][a-z0-9+._-]*) ]]; then
+    package="${BASH_REMATCH[4]}"
+    if [[ "$proposal" != *"pkgs.${package}"* ]] && [[ "$lower" != *"remove ${package}"* ]] && [[ "$lower" != *"uninstall ${package}"* ]]; then
+        echo "proposal does not identify the verified removal target: ${package}" >&2
+        exit 1
+    fi
+fi
 
 exit 0

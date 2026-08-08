@@ -1,0 +1,11 @@
+{
+  "id": "package.remove",
+  "version": 1,
+  "title": "Remove a NixOS system package",
+  "risk": "system-change",
+  "target_kind": "nixpkgs-attribute",
+  "executor": "nixos-package-editor",
+  "validator": "nixos-full-evaluation",
+  "activation": "nixos-generation-switch",
+  "rollback": "trusted-file-backup-and-previous-generation"
+}
