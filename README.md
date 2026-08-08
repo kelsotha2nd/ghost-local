@@ -306,3 +306,21 @@ Because this target changes network exposure, its descriptor carries the
 `protected-network-change` risk class and requires the dedicated phrase
 `authorize Nix option change`. It then uses the normal evaluation, activation,
 and target-aware rollback pipeline. Arbitrary option paths remain unsupported.
+
+## Project workspace
+
+GHOST recognizes a project through a committed `.ghost/project.json` identity.
+For the GHOST repository, `ghost project inspect` reports the exact root, branch,
+HEAD, tracked-file count, and pending paths. `ghost project files` lists only
+Git-tracked files, and `ghost project search <pattern>` searches only that set.
+These commands do not traverse ignored build products, secrets, or unrelated
+home-directory content.
+
+`ghost project test` runs the exact registered argument array `./tests/run` only
+when both the project identity and checkout path match this GHOST repository;
+changed manifests and untrusted projects are refused. No shell string or `eval`
+is involved. `ghost project diagnose [question]` combines live Git state and the
+complete registered test result with the smart local model, producing a grounded
+diagnosis without granting file-edit authority. Project state is also available
+to context and read-only inspection when a query concerns code, Git, tests, or a
+workspace.

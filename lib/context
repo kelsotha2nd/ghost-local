@@ -46,6 +46,7 @@ if [ "${1:-}" = "--compact" ]; then
         [[ "$query" =~ (battery|power|charging) ]] && add_sensor power
         [[ "$query" =~ (nix|generation|rebuild|package|configuration) ]] && add_sensor nix
         [[ "$query" =~ (kernel|uptime|load) ]] && add_sensor system
+        [[ "$query" =~ (project|repo|repository|git|code|source|test|workspace) ]] && add_sensor project
     fi
 
     for sensor in "${compact_sensors[@]}"; do
@@ -83,7 +84,7 @@ fi
 echo
 echo "=== LIVE MACHINE STATE ==="
 echo "Observed: $(date --iso-8601=seconds)"
-for sensor in system resources desktop network storage power nix status; do
+for sensor in system resources desktop network storage power nix project status; do
     sensor_path="$ROOT/sensors/$sensor"
     if [ -x "$sensor_path" ]; then
         "$sensor_path" || echo "${sensor^^}: sensor fault"

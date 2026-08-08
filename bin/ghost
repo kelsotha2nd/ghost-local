@@ -107,6 +107,10 @@ case "${1:-}" in
         shift
         exec "$ROOT/lib/capability" "$@"
         ;;
+    project)
+        shift
+        exec "$ROOT/lib/project" "$@"
+        ;;
     audio)
         exec "$ROOT/lib/audio"
         ;;
@@ -144,6 +148,10 @@ GHOST // COMMANDS
   ghost rollback        challenge rollback of the latest activation
   ghost authorize rollback authorize and run a challenged rollback
   ghost capability list inspect installed action capabilities
+  ghost project inspect inspect the current registered Git project
+  ghost project search <text> search tracked project files
+  ghost project test    run the exact registered project test
+  ghost project diagnose [question] test and diagnose with the smart model
   ghost audio           inspect audio devices and selection
   ghost benchmark [model] measure local model throughput
   ghost help            show this message
@@ -169,7 +177,7 @@ echo "  user: $(whoami)"
 echo "  host: $(hostname)"
 echo
 
-for sensor in system resources desktop network storage power nix memory status; do
+for sensor in system resources desktop network storage power nix memory project status; do
     sensor_path="$ROOT/sensors/$sensor"
 
     if [ -x "$sensor_path" ]; then

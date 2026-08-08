@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+
+set -o pipefail
+SOURCE="${BASH_SOURCE[0]}"
+GHOST_ROOT="$(cd -P "$(dirname "$SOURCE")/.." >/dev/null 2>&1 && pwd)"
+
+project_root="$(git -C "${GHOST_PROJECT_CWD:-$PWD}" rev-parse --show-toplevel 2>/dev/null || true)"
+[ -n "$project_root" ] || { echo "GHOST // current directory is not inside a Git project" >&2; exit 4; }
+manifest="$project_root/.ghost/project.json"
+[ -f "$manifest" ] && [ ! -L "$manifest" ] && jq -e '.schema == 1 and (.id|type == "string")' "$manifest" >/dev/null 2>&1 || {
+    echo "GHOST // project has no valid GHOST contract: $project_root" >&2; exit 5;
+}
+project_id="$(jq -r .id "$manifest")"
+
+inspect_project() {
+    local branch head dirty_count
+    branch="$(git -C "$project_root" branch --show-current 2>/dev/null)"
+    head="$(git -C "$project_root" log -1 --format='%h %s' 2>/dev/null || true)"
+    dirty_count="$(git -C "$project_root" status --porcelain=v1 | wc -l)"
+    echo "PROJECT:"
+    echo "  id: $project_id"
+    echo "  root: $project_root"
+    echo "  branch: ${branch:-detached}"
+    echo "  head: ${head:-unavailable}"
+    echo "  tracked files: $(git -C "$project_root" ls-files | wc -l)"
+    echo "  pending paths: $dirty_count"
+    if [ "$dirty_count" -gt 0 ]; then
+        echo "  changes:"
+        git -C "$project_root" status --short | sed 's/^/    /'
+    fi
+}
+
+case "${1:-inspect}" in
+    inspect)
+        inspect_project
+        ;;
+    files)
+        git -C "$project_root" ls-files
+        ;;
+    search)
+        shift; pattern="$*"
+        [ -n "$pattern" ] || { echo "usage: ghost project search <pattern>" >&2; exit 2; }
+        [ "${#pattern}" -le 160 ] || { echo "GHOST // search pattern too long" >&2; exit 2; }
+        git -C "$project_root" grep -n -I -e "$pattern" -- . || {
+            status=$?; [ "$status" -eq 1 ] && exit 0; exit "$status";
+        }
+        ;;
+    test)
+        [ "$project_root" = "$GHOST_ROOT" ] && [ "$project_id" = ghost ] || {
+            echo "GHOST // test execution is not trusted for this project" >&2; exit 6;
+        }
+        [ "$(jq -cS '.test' "$manifest")" = '["./tests/run"]' ] || {
+            echo "GHOST // registered test contract changed; execution refused" >&2; exit 7;
+        }
+        echo "GHOST // PROJECT TEST — $project_id"
+        (cd "$project_root" && ./tests/run)
+        ;;
+    diagnose)
+        shift; question="$*"
+        [ -n "$question" ] || question="Assess the current project and test results. Identify concrete problems and the safest next step."
+        evidence="$(inspect_project)"
+        test_output="$("$0" test 2>&1)"; test_status=$?
+        evidence="${evidence}
+
+=== REGISTERED TEST OUTPUT (exit ${test_status}) ===
+${test_output}"
+        export GHOST_TOOL_CONTEXT="$evidence"
+        export GHOST_MODEL_OVERRIDE="${GHOST_SMART_MODEL:-qwen3:8b}"
+        export GHOST_MAX_TOKENS="${GHOST_SMART_MAX_TOKENS:-256}"
+        export GHOST_HISTORY_MESSAGES="${GHOST_SMART_HISTORY_MESSAGES:-12}"
+        export GHOST_CONTEXT_MODE=compact
+        export GHOST_REQUEST_INTENT=inspect
+        exec "$GHOST_ROOT/lib/ask" "$question"
+        ;;
+    *)
+        echo "usage: ghost project <inspect|files|search PATTERN|test|diagnose QUESTION>" >&2
+        exit 2
+        ;;
+esac

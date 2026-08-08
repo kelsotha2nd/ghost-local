@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "id": "ghost",
+  "name": "GHOST",
+  "kind": "bash-nixos-assistant",
+  "test": ["./tests/run"],
+  "search": "git-tracked-files-only"
+}

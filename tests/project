@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." >/dev/null 2>&1 && pwd)"
+export GHOST_PROJECT_CWD="$ROOT"
+inspect_output="$("$ROOT/lib/project" inspect)"
+[[ "$inspect_output" == *'id: ghost'* ]]
+[[ "$inspect_output" == *"root: $ROOT"* ]]
+[[ "$inspect_output" == *'branch: main'* ]]
+files_output="$("$ROOT/lib/project" files)"
+grep -qx 'bin/ghost' <<< "$files_output"
+grep -qx '.ghost/project.json' <<< "$files_output"
+search_output="$("$ROOT/lib/project" search 'GHOST // ONLINE')"
+[[ "$search_output" == *'bin/ghost:'* ]]
+set +e
+"$ROOT/lib/project" search '' >/dev/null 2>&1
+empty_status=$?
+set -e
+[ "$empty_status" -eq 2 ]
+echo "project tests passed"

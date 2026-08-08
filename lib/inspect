@@ -88,12 +88,17 @@ inspect_package() {
     fi
 }
 
+inspect_project() {
+    "$ROOT/lib/project" inspect 2>&1 || true
+}
+
 run_target() {
     case "$1" in
         health) inspect_health ;;
         services) inspect_services ;;
         processes) inspect_processes ;;
         config) inspect_config ;;
+        project) inspect_project ;;
         *) return 2 ;;
     esac
 }
@@ -106,6 +111,7 @@ if [ "${1:-}" = "--auto" ]; then
     [[ "$query" =~ (slow|performance|resource|load|memory[[:space:]]+pressure|cpu|disk[[:space:]]+pressure) ]] && targets+=(health processes)
     [[ "$query" =~ (service|daemon|systemd|ollama|failed[[:space:]]+unit) ]] && targets+=(services)
     [[ "$query" =~ (nix[[:space:]]+config|configuration|module|rebuild|syntax|package|install|upgrade|update) ]] && targets+=(config)
+    [[ "$query" =~ (project|repo|repository|git|code|source|test|workspace) ]] && targets+=(project)
 
     seen=" "
     for target in "${targets[@]}"; do
@@ -127,7 +133,7 @@ fi
 
 target="${1:-}"
 if [ -z "$target" ]; then
-    echo "usage: ghost inspect <health|services|processes|config>" >&2
+    echo "usage: ghost inspect <health|services|processes|config|project>" >&2
     exit 2
 fi
 
@@ -136,7 +142,7 @@ status=$?
 if [ "$status" -ne 0 ]; then
     if [ "$status" -eq 2 ]; then
         echo "GHOST // unknown inspection target: $target" >&2
-        echo "allowed: health, services, processes, config" >&2
+        echo "allowed: health, services, processes, config, project" >&2
     fi
     exit "$status"
 fi
