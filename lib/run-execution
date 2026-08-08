@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+
+SOURCE="${BASH_SOURCE[0]}"
+ROOT="$(cd -P "$(dirname "$SOURCE")/.." >/dev/null 2>&1 && pwd)"
+# shellcheck source=state
+source "$ROOT/lib/state"
+ghost_state_init
+proposal_id="${1:-}"
+[ -n "$proposal_id" ] && [ -s "$GHOST_PROPOSAL_FILE" ] || { echo "GHOST // executable proposal unavailable" >&2; exit 4; }
+capability_id="$(jq -r '.capability.id // empty' "$GHOST_PROPOSAL_FILE")"
+case "$capability_id" in
+    service.restart)
+        exec "$ROOT/lib/restart-service" "$proposal_id"
+        ;;
+    package.add|package.remove|"")
+        "$ROOT/lib/execute" "$proposal_id" || exit $?
+        echo
+        GHOST_PREPARE_ACTIVATION=1 exec "$ROOT/lib/verify" "$proposal_id"
+        ;;
+    *)
+        echo "GHOST // no installed executor for capability: $capability_id" >&2
+        exit 12
+        ;;
+esac

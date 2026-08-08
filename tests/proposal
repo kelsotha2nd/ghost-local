@@ -65,4 +65,10 @@ printf '%s\n' \
     "Rollback: restore the exact backup. Pending review." > "$remove_plan"
 "$ROOT/lib/validate-proposal" "$remove_plan" "remove the package curl"
 
+service_plan="$temporary_state/service-plan"
+printf '%s\n' \
+    "Scope: restart ollama.service. Steps: capture state, restart, recheck." \
+    "Risk: temporary interruption. Validation: require active. Rollback: report diagnostics. Pending review." > "$service_plan"
+"$ROOT/lib/validate-proposal" "$service_plan" "restart the ollama service"
+
 echo "proposal tests passed"

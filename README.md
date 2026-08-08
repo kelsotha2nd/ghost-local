@@ -276,3 +276,12 @@ standalone package entry from the existing `environment.systemPackages` block;
 an absent target or a composed Nix expression is refused. It uses the same
 trusted backup, full-system evaluation, deliberate activation, and generation
 rollback chain as package addition.
+
+`service.restart` is an operational capability for discovered systemd services.
+It normalizes and signs the exact `.service` unit, rejects core units such as
+systemd, D-Bus, polkit, SSH, networking, display management, the Nix daemon, and
+login services, and requires the dedicated phrase `authorize service restart`.
+The executor rechecks that the unit is loaded, captures its initial state, runs
+only `sudo systemctl restart <verified-unit>`, and reports success only when a
+fresh post-command check returns `active`. Unlike declarative package changes,
+the restart is immediate and does not enter the NixOS activation pipeline.

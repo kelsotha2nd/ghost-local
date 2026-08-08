@@ -72,5 +72,9 @@ if [[ "$request_lower" =~ (remove|uninstall)[[:space:]]+(the[[:space:]]+)?(packa
         exit 1
     fi
 fi
+if [[ "$request_lower" =~ restart[[:space:]]+(the[[:space:]]+)?(service[[:space:]]+)?([a-zA-Z0-9@_.-]+) ]]; then
+    unit="${BASH_REMATCH[3]}"; [[ "$unit" == *.service ]] || unit="${unit}.service"
+    [[ "$proposal" == *"$unit"* ]] || { echo "proposal does not identify the verified service unit: $unit" >&2; exit 1; }
+fi
 
 exit 0

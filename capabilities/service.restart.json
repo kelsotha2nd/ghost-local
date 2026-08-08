@@ -1,0 +1,11 @@
+{
+  "id": "service.restart",
+  "version": 1,
+  "title": "Restart a verified systemd service",
+  "risk": "operational-change",
+  "target_kind": "loaded-systemd-service",
+  "executor": "systemd-service-restarter",
+  "validator": "systemd-active-state",
+  "activation": "immediate",
+  "rollback": "service-state-diagnostics"
+}

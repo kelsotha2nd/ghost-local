@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+ROOT="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." >/dev/null 2>&1 && pwd)"
+temporary_root="$(mktemp -d /tmp/ghost-service-test.XXXXXX)"; trap 'rm -r "$temporary_root"' EXIT
+export GHOST_STATE_DIR="$temporary_root/state"
+export GHOST_NIX_CONFIG_PATH="$temporary_root/configuration.nix"
+export GHOST_NIX_GHOST_MODULE_PATH="$temporary_root/ghost.nix"
+export GHOST_SYSTEMCTL="$ROOT/tests/fixtures/fake-systemctl"
+export GHOST_SUDO="$ROOT/tests/fixtures/fake-sudo"
+export FAKE_SYSTEMCTL_STATE="$temporary_root/service.state"
+printf '%s\n' inactive > "$FAKE_SYSTEMCTL_STATE"
+printf '%s\n' '{ pkgs, ... }: { environment.systemPackages = with pkgs; [ curl ]; }' > "$GHOST_NIX_CONFIG_PATH"
+printf '%s\n' '{ ... }: { }' > "$GHOST_NIX_GHOST_MODULE_PATH"
+# shellcheck source=../lib/state
+source "$ROOT/lib/state"; ghost_state_init
+
+descriptor="$("$ROOT/lib/capability" resolve 'restart the ollama service')"
+[ "$(jq -r .id <<< "$descriptor")" = service.restart ]
+[ "$(jq -r .target <<< "$descriptor")" = ollama.service ]
+proposal_id="$(ghost_proposal_save 'restart the ollama service' change 'Scope: ollama.service. Steps. Risk. Validation. Rollback. Pending review.' "$descriptor")"
+"$ROOT/lib/stage" "$proposal_id" >/dev/null
+set +e
+"$ROOT/lib/voice-command" 'yes restart it' >/dev/null 2>&1
+casual_status=$?
+set -e
+[ "$casual_status" -eq 64 ]
+output="$(GHOST_SERVICE_TEST_MODE=1 "$ROOT/lib/voice-command" 'authorize service restart.')"
+[[ "$output" == *'SERVICE RESTART VERIFIED'* ]]
+[ "$(jq -r .status "$GHOST_PROPOSAL_FILE")" = fixture-service-restarted ]
+[ "$(jq -r .operation.target "$GHOST_PROPOSAL_FILE")" = ollama.service ]
+[ "$(jq -r .operation.state_before "$GHOST_PROPOSAL_FILE")" = inactive ]
+[ "$(jq -r .operation.state_after "$GHOST_PROPOSAL_FILE")" = active ]
+
+set +e
+GHOST_SYSTEMCTL="$GHOST_SYSTEMCTL" "$ROOT/lib/capability" resolve 'restart dbus' >/dev/null 2>&1
+protected_status=$?
+set -e
+[ "$protected_status" -eq 5 ]
+
+printf '%s\n' inactive > "$FAKE_SYSTEMCTL_STATE"
+failed_id="$(ghost_proposal_save 'restart ollama' change 'Scope: ollama.service. Steps. Risk. Validation. Rollback. Pending review.' "$descriptor")"
+"$ROOT/lib/stage" "$failed_id" >/dev/null
+set +e
+FAKE_SYSTEMCTL_RESTART_RESULT=failure GHOST_SERVICE_TEST_MODE=1 \
+    "$ROOT/lib/voice-command" 'authorize service restart' >/dev/null 2>&1
+failed_status=$?
+set -e
+[ "$failed_status" -eq 14 ]
+[ "$(jq -r .status "$GHOST_PROPOSAL_FILE")" = service-restart-failed ]
+[ "$(jq -r .operation.state_after "$GHOST_PROPOSAL_FILE")" = inactive ]
+
+echo "service tests passed"

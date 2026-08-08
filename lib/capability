@@ -19,7 +19,20 @@ case "${1:-}" in
     resolve)
         shift
         request="$*"; lower="${request,,}"
-        if [[ "$lower" =~ (remove|uninstall)[[:space:]]+(the[[:space:]]+)?(package[[:space:]]+)?([a-z0-9][a-z0-9+._-]*) ]]; then
+        if [[ "$lower" =~ restart[[:space:]]+(the[[:space:]]+)?(service[[:space:]]+)?([a-zA-Z0-9@_.-]+) ]]; then
+            unit="${BASH_REMATCH[3]}"
+            [[ "$unit" == *.service ]] || unit="${unit}.service"
+            [[ "$unit" =~ ^[a-zA-Z0-9@_.-]+\.service$ ]] || { echo "GHOST // invalid systemd service name" >&2; exit 4; }
+            case "$unit" in
+                systemd-*|dbus.service|polkit.service|sshd.service|NetworkManager.service|display-manager.service|nix-daemon.service|user@*.service|*getty*.service)
+                    echo "GHOST // protected system service cannot be restarted by this capability: $unit" >&2; exit 5 ;;
+            esac
+            systemctl_command="${GHOST_SYSTEMCTL:-systemctl}"
+            command -v "$systemctl_command" >/dev/null 2>&1 || { echo "GHOST // systemctl unavailable" >&2; exit 4; }
+            load_state="$("$systemctl_command" show "$unit" --property=LoadState --value 2>/dev/null || true)"
+            [ "$load_state" = loaded ] || { echo "GHOST // service is not a discovered loaded unit: $unit" >&2; exit 4; }
+            jq -cS --arg target "$unit" '. + {target: $target}' "$ROOT/capabilities/service.restart.json"
+        elif [[ "$lower" =~ (remove|uninstall)[[:space:]]+(the[[:space:]]+)?(package[[:space:]]+)?([a-z0-9][a-z0-9+._-]*) ]]; then
             package="${BASH_REMATCH[4]}"
             jq -cS --arg target "$package" '. + {target: $target}' "$ROOT/capabilities/package.remove.json"
         elif [[ "$lower" =~ (add|install)[[:space:]]+(the[[:space:]]+)?(package[[:space:]]+)?([a-z0-9][a-z0-9+._-]*) ]]; then

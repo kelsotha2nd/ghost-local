@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+
+state_file="${FAKE_SYSTEMCTL_STATE:?}"
+case "${1:-}" in
+    show)
+        [ "${2:-}" = ollama.service ] && { echo loaded; exit 0; }
+        echo not-found; exit 1
+        ;;
+    is-active)
+        state="$(<"$state_file")"; echo "$state"; [ "$state" = active ]
+        ;;
+    restart)
+        [ "${FAKE_SYSTEMCTL_RESTART_RESULT:-success}" = success ] || exit 1
+        printf '%s\n' active > "$state_file"
+        ;;
+    *) exit 2 ;;
+esac

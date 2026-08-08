@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+
+set -o pipefail
+SOURCE="${BASH_SOURCE[0]}"
+ROOT="$(cd -P "$(dirname "$SOURCE")/.." >/dev/null 2>&1 && pwd)"
+# shellcheck source=state
+source "$ROOT/lib/state"
+
+proposal_id="${1:-}"
+[ -n "$proposal_id" ] || { echo "usage: ghost restart-service <proposal-id>" >&2; exit 2; }
+test_mode="${GHOST_SERVICE_TEST_MODE:-0}"
+if [ "$test_mode" = 1 ]; then
+    case "$GHOST_STATE_DIR" in /tmp/*) ;; *) echo "GHOST // service fixture state must live beneath /tmp" >&2; exit 21 ;; esac
+    systemctl_command="${GHOST_SYSTEMCTL:-}"; sudo_command="${GHOST_SUDO:-}"
+    [ -x "$systemctl_command" ] && [ -x "$sudo_command" ] || { echo "GHOST // executable fixture commands required" >&2; exit 21; }
+else
+    systemctl_command=systemctl; sudo_command=sudo
+    command -v systemctl >/dev/null && command -v sudo >/dev/null || { echo "GHOST // service control dependencies unavailable" >&2; exit 3; }
+fi
+
+ghost_state_init
+[ -s "$GHOST_PROPOSAL_FILE" ] && [ -s "$GHOST_APPROVAL_CREDENTIAL_FILE" ] && [ -s "$GHOST_EXECUTION_CHALLENGE_FILE" ] || {
+    echo "GHOST // authorized service proposal unavailable" >&2; exit 4;
+}
+{
+    flock -x 9
+    stored_id="$(jq -r '.id // empty' "$GHOST_PROPOSAL_FILE")"
+    status="$(jq -r '.status // empty' "$GHOST_PROPOSAL_FILE")"
+    intent="$(jq -r '.intent // empty' "$GHOST_PROPOSAL_FILE")"
+    request="$(jq -r '.request // empty' "$GHOST_PROPOSAL_FILE")"
+    plan="$(jq -r '.plan // empty' "$GHOST_PROPOSAL_FILE")"
+    digest="$(jq -r '.digest // empty' "$GHOST_PROPOSAL_FILE")"
+    capability="$(jq -cS '.capability // null' "$GHOST_PROPOSAL_FILE")"
+    unit="$(jq -r '.target // empty' <<< "$capability")"
+    execution_expiry="$(jq -r '.execution_authorization.expires_epoch // 0' "$GHOST_PROPOSAL_FILE")"
+    challenge_id="$(jq -r '.proposal_id // empty' "$GHOST_EXECUTION_CHALLENGE_FILE")"
+    challenge_digest="$(jq -r '.digest // empty' "$GHOST_EXECUTION_CHALLENGE_FILE")"
+    challenge_consumed="$(jq -r 'if has("consumed") then .consumed else false end' "$GHOST_EXECUTION_CHALLENGE_FILE")"
+    [ "$proposal_id" = "$stored_id" ] && [ "$status" = execution-authorized ] && [ "$intent" = change ] || { echo "GHOST // service execution state mismatch" >&2; exit 5; }
+    [ "$(jq -r '.id // empty' <<< "$capability")" = service.restart ] && [[ "$unit" =~ ^[a-zA-Z0-9@_.-]+\.service$ ]] || { echo "GHOST // invalid service restart capability" >&2; exit 6; }
+    case "$unit" in systemd-*|dbus.service|polkit.service|sshd.service|NetworkManager.service|display-manager.service|nix-daemon.service|user@*.service|*getty*.service) echo "GHOST // protected service restart refused" >&2; exit 7 ;; esac
+    [ "$(date +%s)" -lt "$execution_expiry" ] || { echo "GHOST // service restart authorization expired" >&2; exit 8; }
+    [ "$challenge_id" = "$stored_id" ] && [ "$challenge_digest" = "$digest" ] && [ "$challenge_consumed" = true ] || { echo "GHOST // consumed execution challenge unavailable" >&2; exit 9; }
+    [ "$(ghost_proposal_digest "$request" "$intent" "$plan" "$capability")" = "$digest" ] || { echo "GHOST // service proposal digest mismatch" >&2; exit 10; }
+    [ "$(ghost_machine_fingerprint)" = "$(jq -c '.machine_fingerprint' "$GHOST_PROPOSAL_FILE")" ] || { echo "GHOST // machine configuration changed; restart refused" >&2; exit 11; }
+    credential_id="$(jq -r '.proposal_id // empty' "$GHOST_APPROVAL_CREDENTIAL_FILE")"
+    credential_digest="$(jq -r '.digest // empty' "$GHOST_APPROVAL_CREDENTIAL_FILE")"
+    credential_expiry="$(jq -r '.expires_epoch // 0' "$GHOST_APPROVAL_CREDENTIAL_FILE")"
+    token="$(jq -r '.token // empty' "$GHOST_APPROVAL_CREDENTIAL_FILE")"
+    [ "$credential_id" = "$stored_id" ] && [ "$credential_digest" = "$digest" ] &&
+        [ "$credential_expiry" = "$(jq -r '.approval.expires_epoch' "$GHOST_PROPOSAL_FILE")" ] &&
+        [ "$(printf %s "$token" | sha256sum | awk '{print $1}')" = "$(jq -r '.approval.token_sha256' "$GHOST_PROPOSAL_FILE")" ] || {
+        echo "GHOST // approval credential mismatch" >&2; exit 12;
+    }
+    load_state="$("$systemctl_command" show "$unit" --property=LoadState --value 2>/dev/null || true)"
+    [ "$load_state" = loaded ] || { echo "GHOST // service is no longer a loaded unit" >&2; exit 13; }
+    before_state="$("$systemctl_command" is-active "$unit" 2>/dev/null || true)"
+    started_at="$(date --iso-8601=seconds)"
+    temporary="$(mktemp "$GHOST_STATE_DIR/.proposal.XXXXXX")"
+    jq --arg started_at "$started_at" --arg unit "$unit" --arg before "$before_state" \
+        '.status = "service-restart-running" | .operation = {started_at: $started_at, capability: "service.restart", target: $unit, state_before: $before, result: "running"}' \
+        "$GHOST_PROPOSAL_FILE" > "$temporary"
+    chmod 600 "$temporary"; mv "$temporary" "$GHOST_PROPOSAL_FILE"
+} 9> "$GHOST_STATE_LOCK"
+
+echo "GHOST // RESTARTING VERIFIED SERVICE"
+echo "  unit: $unit"
+"$sudo_command" "$systemctl_command" restart "$unit"
+command_status=$?
+after_state="$("$systemctl_command" is-active "$unit" 2>/dev/null || true)"
+finished_at="$(date --iso-8601=seconds)"; result=failed; new_status=service-restart-failed
+[ "$command_status" -eq 0 ] && [ "$after_state" = active ] && { result=passed; new_status=service-restarted; [ "$test_mode" = 1 ] && new_status=fixture-service-restarted; }
+{
+    flock -x 9
+    temporary="$(mktemp "$GHOST_STATE_DIR/.proposal.XXXXXX")"
+    jq --arg status "$new_status" --arg finished_at "$finished_at" --arg result "$result" --arg after "$after_state" --argjson exit_status "$command_status" \
+        '.status = $status | .operation += {finished_at: $finished_at, result: $result, state_after: $after, exit_status: $exit_status}' \
+        "$GHOST_PROPOSAL_FILE" > "$temporary"
+    chmod 600 "$temporary"; mv "$temporary" "$GHOST_PROPOSAL_FILE"
+    jq -cn --arg event "$new_status" --arg proposal_id "$proposal_id" --arg unit "$unit" --arg before "$before_state" --arg after "$after_state" --argjson exit_status "$command_status" \
+        '{event: $event, proposal_id: $proposal_id, capability: "service.restart", target: $unit, state_before: $before, state_after: $after, exit_status: $exit_status}' >> "$GHOST_APPROVAL_AUDIT_FILE"
+} 9> "$GHOST_STATE_LOCK"
+
+if [ "$result" = passed ]; then echo "GHOST // SERVICE RESTART VERIFIED"; echo "  state: $before_state -> $after_state"; exit 0; fi
+echo "GHOST // SERVICE RESTART FAILED" >&2; echo "  state: $before_state -> $after_state" >&2; exit 14
