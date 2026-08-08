@@ -72,8 +72,24 @@ ${test_output}"
         export GHOST_REQUEST_INTENT=inspect
         exec "$GHOST_ROOT/lib/ask" "$question"
         ;;
+    prepare)
+        shift
+        exec "$GHOST_ROOT/lib/project-prepare" "$project_root" "$@"
+        ;;
+    patch)
+        # shellcheck source=state
+        source "$GHOST_ROOT/lib/state"; ghost_state_init
+        [ -s "$GHOST_STATE_DIR/project-patch.json" ] || { echo "GHOST // no prepared project patch" >&2; exit 4; }
+        patch_file="$(jq -r '.patch // empty' "$GHOST_STATE_DIR/project-patch.json")"
+        expected="$(jq -r '.patch_sha256 // empty' "$GHOST_STATE_DIR/project-patch.json")"
+        [ -s "$patch_file" ] && [ "$(sha256sum "$patch_file" | awk '{print $1}')" = "$expected" ] || {
+            echo "GHOST // prepared patch fingerprint mismatch" >&2; exit 5;
+        }
+        jq -r '"GHOST // PREPARED PROJECT PATCH\n  id: \(.id)\n  status: \(.status)\n  base: \(.head[0:12])\n  request: \(.request)\n  files: \(.files | join(", "))\n"' "$GHOST_STATE_DIR/project-patch.json"
+        sed -n '1,320p' "$patch_file"
+        ;;
     *)
-        echo "usage: ghost project <inspect|files|search PATTERN|test|diagnose QUESTION>" >&2
+        echo "usage: ghost project <inspect|files|search PATTERN|test|diagnose QUESTION|prepare CHANGE|patch>" >&2
         exit 2
         ;;
 esac

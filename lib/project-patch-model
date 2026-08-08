@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+
+set -o pipefail
+SOURCE="${BASH_SOURCE[0]}"; ROOT="$(cd -P "$(dirname "$SOURCE")/.." >/dev/null 2>&1 && pwd)"
+# shellcheck source=voice-config
+source "$ROOT/lib/voice-config"
+SYSTEM_MODEL_CONFIG=/etc/ghost/model.env; MODEL_CONFIG="$ROOT/config/model.env"
+[ -r "$SYSTEM_MODEL_CONFIG" ] && source "$SYSTEM_MODEL_CONFIG"
+[ -r "$MODEL_CONFIG" ] && source "$MODEL_CONFIG"
+request="${1:-}"; context_file="${2:-}"
+[ -n "$request" ] && [ -s "$context_file" ] || { echo "GHOST // patch request or source context unavailable" >&2; exit 2; }
+model="${GHOST_SMART_MODEL:-${GHOST_MODEL:-}}"; [ -n "$model" ] || { echo "GHOST // smart model unavailable" >&2; exit 3; }
+system_prompt='You prepare a minimal code change for the GHOST repository. Return only a valid unified Git diff with a/ and b/ paths. Do not use Markdown fences or commentary. Modify only files supplied in SOURCE CONTEXT. Preserve the Bash architecture and safety gates. Do not edit .ghost/project.json, environment files, secrets, generated files, or Git metadata. Add or update focused tests when the request requires behavior changes.'
+context="$(<"$context_file")"
+payload="$(jq -n --arg model "$model" --arg system "$system_prompt" --arg request "$request" --arg context "$context" \
+    '{model:$model, stream:false, reasoning_effort:"none", temperature:0.2, max_tokens:1536,
+      messages:[{role:"system",content:$system},{role:"user",content:("REQUEST:\n"+$request+"\n\nSOURCE CONTEXT:\n"+$context)}]}')"
+headers=(-H 'Content-Type: application/json'); [ -n "${GHOST_API_KEY:-}" ] && headers+=(-H "Authorization: Bearer $GHOST_API_KEY")
+response="$(curl --silent --show-error --fail-with-body --max-time "${GHOST_PROJECT_PATCH_TIMEOUT:-300}" \
+    "${headers[@]}" --data "$payload" "${GHOST_API_URL:-http://127.0.0.1:11434/v1/chat/completions}")" || {
+    echo "GHOST // patch model request failed" >&2; exit 4;
+}
+jq -er '.choices[0].message.content | select(length > 0)' <<< "$response"

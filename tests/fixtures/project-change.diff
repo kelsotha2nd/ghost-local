@@ -1,0 +1,8 @@
+diff --git a/app.sh b/app.sh
+index 93d11f0..297efef 100755
+--- a/app.sh
++++ b/app.sh
+@@ -1,2 +1,2 @@
+ #!/usr/bin/env bash
+-echo old
++echo new

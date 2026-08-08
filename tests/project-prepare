@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+ROOT="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." >/dev/null 2>&1 && pwd)"
+temporary_root="$(mktemp -d /tmp/ghost-project-prepare-test.XXXXXX)"; trap 'rm -r "$temporary_root"' EXIT
+fixture_repo="$temporary_root/repo"; mkdir -p "$fixture_repo/.ghost" "$fixture_repo/tests"
+printf '%s\n' '#!/usr/bin/env bash' 'echo old' > "$fixture_repo/app.sh"
+printf '%s\n' '#!/usr/bin/env bash' 'set -e' "grep -q '^echo new$' app.sh" 'echo fixture project tests passed' > "$fixture_repo/tests/run"
+chmod 755 "$fixture_repo/app.sh" "$fixture_repo/tests/run"
+printf '%s\n' '{"schema":1,"id":"fixture","test":["./tests/run"]}' > "$fixture_repo/.ghost/project.json"
+git -C "$fixture_repo" init -q
+git -C "$fixture_repo" config user.name 'GHOST Test'
+git -C "$fixture_repo" config user.email 'ghost-test@localhost'
+git -C "$fixture_repo" add .
+git -C "$fixture_repo" commit -qm fixture
+export GHOST_STATE_DIR="$temporary_root/state"
+output="$(GHOST_PROJECT_PREPARE_TEST_MODE=1 GHOST_PROJECT_PATCH_FIXTURE="$ROOT/tests/fixtures/project-change.diff" \
+    "$ROOT/lib/project-prepare" "$fixture_repo" 'change old to new')"
+[[ "$output" == *'ISOLATED PATCH PREPARED AND TESTED'* ]]
+grep -q '^echo old$' "$fixture_repo/app.sh"
+[ -z "$(git -C "$fixture_repo" status --porcelain=v1)" ]
+[ "$(jq -r .status "$GHOST_STATE_DIR/project-patch.json")" = prepared-tested ]
+patch_file="$(jq -r .patch "$GHOST_STATE_DIR/project-patch.json")"
+grep -q '^+echo new$' "$patch_file"
+[ "$(git -C "$fixture_repo" worktree list --porcelain | grep -c '^worktree ')" -eq 1 ]
+display="$(GHOST_PROJECT_CWD="$fixture_repo" "$ROOT/lib/project" patch)"
+[[ "$display" == *'PREPARED PROJECT PATCH'* ]]
+[[ "$display" == *'+echo new'* ]]
+
+touch "$fixture_repo/untracked"
+set +e
+GHOST_PROJECT_PREPARE_TEST_MODE=1 GHOST_PROJECT_PATCH_FIXTURE="$ROOT/tests/fixtures/project-change.diff" \
+    "$ROOT/lib/project-prepare" "$fixture_repo" 'dirty request' >/dev/null 2>&1
+dirty_status=$?
+set -e
+[ "$dirty_status" -eq 8 ]
+rm -f "$fixture_repo/untracked"
+
+protected_patch="$temporary_root/protected.diff"
+printf '%s\n' 'diff --git a/config/model.env b/config/model.env' 'new file mode 100644' '--- /dev/null' '+++ b/config/model.env' '@@ -0,0 +1 @@' '+SECRET=nope' > "$protected_patch"
+set +e
+GHOST_PROJECT_PREPARE_TEST_MODE=1 GHOST_PROJECT_PATCH_FIXTURE="$protected_patch" \
+    "$ROOT/lib/project-prepare" "$fixture_repo" 'touch protected config' >/dev/null 2>&1
+protected_status=$?
+set -e
+[ "$protected_status" -eq 11 ]
+
+failing_patch="$temporary_root/failing.diff"
+sed 's/echo new/echo broken/' "$ROOT/tests/fixtures/project-change.diff" > "$failing_patch"
+set +e
+GHOST_PROJECT_PREPARE_TEST_MODE=1 GHOST_PROJECT_PATCH_FIXTURE="$failing_patch" \
+    "$ROOT/lib/project-prepare" "$fixture_repo" 'replace old with broken' >/dev/null 2>&1
+failing_status=$?
+set -e
+[ "$failing_status" -eq 13 ]
+grep -q '^echo old$' "$fixture_repo/app.sh"
+[ "$(git -C "$fixture_repo" worktree list --porcelain | grep -c '^worktree ')" -eq 1 ]
+echo "project prepare tests passed"

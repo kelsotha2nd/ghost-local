@@ -152,6 +152,8 @@ GHOST // COMMANDS
   ghost project search <text> search tracked project files
   ghost project test    run the exact registered project test
   ghost project diagnose [question] test and diagnose with the smart model
+  ghost project prepare <change> create and test an isolated AI patch
+  ghost project patch   review the latest prepared patch
   ghost audio           inspect audio devices and selection
   ghost benchmark [model] measure local model throughput
   ghost help            show this message

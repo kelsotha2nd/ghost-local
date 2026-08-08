@@ -324,3 +324,17 @@ complete registered test result with the smart local model, producing a grounded
 diagnosis without granting file-edit authority. Project state is also available
 to context and read-only inspection when a query concerns code, Git, tests, or a
 workspace.
+
+`ghost project prepare <change>` is the isolated coding path. It requires a
+clean active checkout, records the exact HEAD commit, creates a detached
+worktree beneath `/tmp`, and supplies the smart model with at most 120 KiB from
+request-relevant tracked files. The response must be a unified Git diff. Every
+changed path must have appeared in that bounded source context; Git metadata,
+the project contract, local model/voice configuration, and machine memory are
+protected. GHOST checks and applies the patch only in the worktree, runs the
+exact registered suite there, saves the patch and test log with private
+permissions, then removes the worktree. Dirty checkouts, malformed patches,
+protected or unseen paths, apply failures, and test failures all leave the
+active checkout untouched. `ghost project patch` fingerprints and displays the
+latest prepared patch for review; applying it is intentionally a separate
+future authorization boundary.

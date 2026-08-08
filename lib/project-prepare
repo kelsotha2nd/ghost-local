@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+
+set -o pipefail
+SOURCE="${BASH_SOURCE[0]}"; ROOT="$(cd -P "$(dirname "$SOURCE")/.." >/dev/null 2>&1 && pwd)"
+# shellcheck source=state
+source "$ROOT/lib/state"
+project_root="${1:-}"; shift || true; request="$*"
+[ -n "$project_root" ] && [ -n "$request" ] || { echo "usage: ghost project prepare <change>" >&2; exit 2; }
+project_root="$(git -C "$project_root" rev-parse --show-toplevel 2>/dev/null || true)"; [ -n "$project_root" ] || exit 4
+test_mode="${GHOST_PROJECT_PREPARE_TEST_MODE:-0}"
+if [ "$test_mode" = 1 ]; then case "$project_root" in /tmp/*) ;; *) echo "GHOST // patch fixture project must live beneath /tmp" >&2; exit 21 ;; esac
+else [ "$project_root" = "$ROOT" ] || { echo "GHOST // patch preparation is not trusted for this project" >&2; exit 6; }; fi
+manifest="$project_root/.ghost/project.json"
+[ -f "$manifest" ] && [ ! -L "$manifest" ] && [ "$(jq -cS '.test' "$manifest")" = '["./tests/run"]' ] || { echo "GHOST // trusted project test contract unavailable" >&2; exit 7; }
+[ -z "$(git -C "$project_root" status --porcelain=v1)" ] || { echo "GHOST // active checkout must be clean before isolated preparation" >&2; exit 8; }
+head_commit="$(git -C "$project_root" rev-parse HEAD)"
+ghost_state_init
+worktree="$(mktemp -d /tmp/ghost-project-worktree.XXXXXX)"; context_file="$(mktemp /tmp/ghost-project-context.XXXXXX)"
+cleanup() {
+    case "$worktree" in /tmp/ghost-project-worktree.*) git -C "$project_root" worktree remove --force "$worktree" >/dev/null 2>&1 || true ;; esac
+    rm -f "$context_file"
+}
+trap cleanup EXIT
+git -C "$project_root" worktree add --detach "$worktree" "$head_commit" >/dev/null || { echo "GHOST // isolated worktree creation failed" >&2; exit 9; }
+
+selected=""; count=0; total=0
+for word in $request; do
+    word="${word//[^a-zA-Z0-9_.-]/}"; [ "${#word}" -ge 3 ] || continue
+    while IFS= read -r file; do
+        [[ "$selected" == *$'\n'"$file"$'\n'* ]] && continue
+        [ -f "$project_root/$file" ] || continue
+        size="$(stat -c %s "$project_root/$file")"; [ "$size" -le 40000 ] || continue
+        [ "$((total + size))" -le 120000 ] || continue
+        selected="${selected}"$'\n'"${file}"$'\n'; count=$((count + 1)); total=$((total + size))
+        { echo "===== FILE: $file ====="; sed -n '1,1200p' "$project_root/$file"; echo; } >> "$context_file"
+        [ "$count" -ge 12 ] && break 2
+    done < <(git -C "$project_root" grep -l -I -i -e "$word" -- . 2>/dev/null || true)
+done
+if [ "$count" -eq 0 ]; then
+    for file in README.md lib/project tests/project; do
+        [ -f "$project_root/$file" ] || continue
+        selected="${selected}"$'\n'"${file}"$'\n'
+        { echo "===== FILE: $file ====="; sed -n '1,1200p' "$project_root/$file"; echo; } >> "$context_file"
+    done
+fi
+
+raw_patch="$(mktemp /tmp/ghost-project-raw-patch.XXXXXX)"; trap 'rm -f "$raw_patch"; cleanup' EXIT
+if [ "$test_mode" = 1 ]; then
+    [ -s "${GHOST_PROJECT_PATCH_FIXTURE:-}" ] || { echo "GHOST // patch fixture unavailable" >&2; exit 21; }
+    cp "$GHOST_PROJECT_PATCH_FIXTURE" "$raw_patch"
+else
+    "$ROOT/lib/project-patch-model" "$request" "$context_file" > "$raw_patch" || exit $?
+fi
+grep -q '^diff --git a/.* b/' "$raw_patch" || { echo "GHOST // model did not return a unified Git diff" >&2; exit 10; }
+changed_files=()
+while IFS= read -r header; do
+    path="${header#+++ }"; [ "$path" = /dev/null ] && continue; path="${path#b/}"
+    [[ "$path" =~ ^[A-Za-z0-9._/-]+$ ]] && [[ "/$path/" != *"/../"* ]] || { echo "GHOST // unsafe patch path: $path" >&2; exit 11; }
+    case "$path" in .git/*|.ghost/*|config/model.env|config/voice.env|memory/*) echo "GHOST // protected patch path: $path" >&2; exit 11 ;; esac
+    [[ "$selected" == *$'\n'"$path"$'\n'* ]] || { echo "GHOST // patch path was not present in model context: $path" >&2; exit 11; }
+    changed_files+=("$path")
+done < <(grep '^+++ ' "$raw_patch")
+[ "${#changed_files[@]}" -gt 0 ] || { echo "GHOST // patch contains no changed files" >&2; exit 10; }
+git -C "$worktree" apply --check "$raw_patch" || { echo "GHOST // generated patch does not apply cleanly" >&2; exit 12; }
+git -C "$worktree" apply "$raw_patch" || exit 12
+test_log="$(mktemp /tmp/ghost-project-test.XXXXXX)"; trap 'rm -f "$raw_patch" "$test_log"; cleanup' EXIT
+(cd "$worktree" && ./tests/run) > "$test_log" 2>&1; test_status=$?
+[ "$test_status" -eq 0 ] || { echo "GHOST // isolated patch tests failed; active checkout unchanged" >&2; tail -n 30 "$test_log" >&2; exit 13; }
+patch_id="$(date +%Y%m%d-%H%M%S)"; saved_patch="$GHOST_STATE_DIR/project-patch-${patch_id}.diff"; saved_log="$GHOST_STATE_DIR/project-patch-${patch_id}.test.log"
+cp "$raw_patch" "$saved_patch"; cp "$test_log" "$saved_log"; chmod 600 "$saved_patch" "$saved_log"
+patch_sha="$(sha256sum "$saved_patch" | awk '{print $1}')"; created_at="$(date --iso-8601=seconds)"
+jq -n --arg id "$patch_id" --arg created_at "$created_at" --arg project_root "$project_root" --arg head "$head_commit" \
+    --arg request "$request" --arg patch "$saved_patch" --arg patch_sha256 "$patch_sha" --arg test_log "$saved_log" \
+    --argjson files "$(printf '%s\n' "${changed_files[@]}" | jq -R . | jq -s .)" \
+    '{id:$id,created_at:$created_at,status:"prepared-tested",project_root:$project_root,head:$head,request:$request,patch:$patch,patch_sha256:$patch_sha256,test_log:$test_log,files:$files}' \
+    > "$GHOST_STATE_DIR/project-patch.json"; chmod 600 "$GHOST_STATE_DIR/project-patch.json"
+echo "GHOST // ISOLATED PATCH PREPARED AND TESTED"
+echo "  id: $patch_id"; echo "  base: ${head_commit:0:12}"; echo "  files: ${#changed_files[@]}"; echo "  active checkout: unchanged"
+echo; sed -n '1,240p' "$saved_patch"
