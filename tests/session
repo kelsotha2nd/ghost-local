@@ -9,6 +9,13 @@ temporary_root="$(mktemp -d /tmp/ghost-session-test.XXXXXX)"; trap 'rm -r "$temp
 [ "$("$ROOT/lib/session-phrase" 'gus go quite')" = quiet ]
 [ "$("$ROOT/lib/session-phrase" 'dust go quite')" = near-quiet ]
 [ "$("$ROOT/lib/session-phrase" 'let us keep talking')" = none ]
+[ "$("$ROOT/lib/wake-phrase" 'Ghost, what is my RAM usage?')" = 'what is my RAM usage?' ]
+[ "$("$ROOT/lib/wake-phrase" 'gus what time is it')" = 'what time is it' ]
+set +e
+"$ROOT/lib/wake-phrase" 'Velma found a clue' >/dev/null; background_status=$?
+"$ROOT/lib/wake-phrase" 'Ghost' >/dev/null; wake_only_status=$?
+set -e
+[ "$background_status" -eq 1 ]; [ "$wake_only_status" -eq 2 ]
 runner="$temporary_root/voice-runner"; counter="$temporary_root/count"
 printf '%s\n' '#!/usr/bin/env bash' 'count=0; [ ! -f "$GHOST_SESSION_TEST_COUNTER" ] || count="$(<"$GHOST_SESSION_TEST_COUNTER")"' 'count=$((count + 1)); printf "%s\n" "$count" > "$GHOST_SESSION_TEST_COUNTER"' '[ "$count" -eq 1 ] && exit 0' 'exit 65' > "$runner"
 chmod 755 "$runner"
@@ -26,4 +33,10 @@ failure_status=$?
 set -e
 [ "$failure_status" -eq 9 ]
 [[ "$failure_output" == *'SESSION HALTED'* ]]
+
+wake_runner="$temporary_root/wake-runner"
+printf '%s\n' '#!/usr/bin/env bash' 'printf "%s %s\\n" "$GHOST_WAKE_REQUIRED" "$1" > "$GHOST_SESSION_WAKE_ARGS"' 'exit 65' > "$wake_runner"
+chmod 755 "$wake_runner"; export GHOST_SESSION_WAKE_ARGS="$temporary_root/wake.args"
+GHOST_SESSION_TEST_MODE=1 GHOST_SESSION_VOICE_RUNNER="$wake_runner" GHOST_SESSION_ANNOUNCE=0 "$ROOT/lib/session" --wake >/dev/null
+[ "$(<"$GHOST_SESSION_WAKE_ARGS")" = '1 --auto' ]
 echo "session tests passed"

@@ -440,3 +440,12 @@ volume. In the mixed-room test it rejected background dialogue while retaining
 and transcribing the nearby request. `GHOST_AUTO_DEBUG=1` reports only byte
 count, peak level, and recent silence events for recalibration; captured audio
 still follows normal deletion.
+
+`ghost session --wake` adds a deterministic address gate to the automatic
+session. Only utterances beginning with `Ghost` or the safe STT alias `Gus`
+proceed to command routing, history, or Ollama; other transcribed room speech is
+discarded locally. Saying only the name produces a short `Online`
+acknowledgement and waits for the next addressed turn. This is a transcript-level
+wake gate, so Whisper still performs local transcription; a future acoustic wake
+detector can replace standby transcription without changing the downstream
+voice pipeline.

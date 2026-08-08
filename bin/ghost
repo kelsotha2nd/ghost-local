@@ -144,7 +144,7 @@ GHOST // COMMANDS
   ghost listen [seconds|--auto] push-to-talk, timed, or speech-ended transcription
   ghost speak <text>    speak text through the local voice
   ghost voice [seconds|--auto] capture, answer, and speak
-  ghost session [seconds|--auto] keep the voice pipeline resident between turns
+  ghost session [seconds|--auto|--wake] keep the voice pipeline resident between turns
   ghost route <request> inspect automatic voice routing
   ghost inspect <target> run a whitelisted read-only inspection
   ghost propose <change> create and save a change proposal

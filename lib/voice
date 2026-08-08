@@ -9,11 +9,6 @@ export GHOST_SHOW_TIMING=1
 
 raw_transcript="$("$ROOT/lib/listen" "${1:-}")" || exit $?
 transcript="$("$ROOT/lib/normalize" "$raw_transcript")"
-if [ "$transcript" != "$raw_transcript" ]; then
-    echo "GHOST // NORMALIZED: $transcript"
-fi
-echo "YOU: $transcript"
-
 if [ "${GHOST_SESSION_MODE:-0}" = 1 ]; then
     session_phrase="$("$ROOT/lib/session-phrase" "$transcript")"
     if [ "$session_phrase" = quiet ]; then
@@ -26,6 +21,25 @@ if [ "${GHOST_SESSION_MODE:-0}" = 1 ]; then
         exit 0
     fi
 fi
+
+if [ "${GHOST_WAKE_REQUIRED:-0}" = 1 ]; then
+    wake_request="$("$ROOT/lib/wake-phrase" "$transcript")"; wake_status=$?
+    if [ "$wake_status" -eq 2 ]; then
+        echo "GHOST // WAKE: acknowledged"
+        "$ROOT/lib/speak" "Online." || true
+        exit 0
+    elif [ "$wake_status" -ne 0 ]; then
+        echo "GHOST // WAKE: background speech ignored"
+        exit 0
+    fi
+    transcript="$wake_request"
+    echo "GHOST // WAKE: accepted"
+fi
+
+if [ "$transcript" != "$raw_transcript" ]; then
+    echo "GHOST // NORMALIZED: $transcript"
+fi
+echo "YOU: $transcript"
 
 GHOST_VOICE_COMMAND_SPEAK=1 "$ROOT/lib/voice-command" "$transcript"
 voice_command_status=$?

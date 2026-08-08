@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+
+phrase="$*"; lowered="${phrase,,}"
+lowered="$(awk '{$1=$1; print}' <<< "$lowered")"
+if [[ "$lowered" =~ ^(ghost|gus)(,|[[:space:]])*$ ]]; then
+    exit 2
+fi
+if [[ "$lowered" =~ ^(ghost|gus)(,|[[:space:]])+.+$ ]]; then
+    request="$(sed -E 's/^[Gg][Hh]?[Oo]?[Ss][Tt]?,?[[:space:]]+//; s/^[Gg][Uu][Ss],?[[:space:]]+//' <<< "$phrase")"
+    request="$(awk '{$1=$1; print}' <<< "$request")"
+    [ -n "$request" ] || exit 2
+    printf '%s\n' "$request"; exit 0
+fi
+exit 1

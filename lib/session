@@ -10,11 +10,19 @@ if [ "${GHOST_SESSION_TEST_MODE:-0}" = 1 ]; then
 fi
 failure_limit="${GHOST_SESSION_FAILURE_LIMIT:-3}"
 [[ "$failure_limit" =~ ^[1-9]$ ]] || { echo "GHOST // session failure limit must be between 1 and 9" >&2; exit 2; }
+wake_required=0; capture_args=("$@")
+if [ "${1:-}" = --wake ]; then wake_required=1; capture_args=(--auto); fi
 
 running=1
 trap 'running=0' INT TERM
 echo "GHOST // SESSION ONLINE"
-if [ "${1:-}" = --auto ]; then echo "  automatic speech endpoint active"; else echo "  push ENTER to close each capture"; fi
+if [ "$wake_required" -eq 1 ]; then
+    echo "  automatic speech endpoint + local wake gate active"
+elif [ "${1:-}" = --auto ]; then
+    echo "  automatic speech endpoint active"
+else
+    echo "  push ENTER to close each capture"
+fi
 echo "  say: Ghost, go quiet"
 if [ "${GHOST_SESSION_ANNOUNCE:-1}" = 1 ]; then
     "$ROOT/lib/speak" "Voice session online." || true
@@ -22,7 +30,7 @@ fi
 
 failures=0
 while [ "$running" -eq 1 ]; do
-    GHOST_SESSION_MODE=1 "$runner" "$@"
+    GHOST_SESSION_MODE=1 GHOST_WAKE_REQUIRED="$wake_required" "$runner" "${capture_args[@]}"
     voice_status=$?
     case "$voice_status" in
         0) failures=0 ;;
