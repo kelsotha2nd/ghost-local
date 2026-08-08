@@ -19,8 +19,6 @@ proposal_id="${1:-$(jq -r '.id // empty' "$GHOST_PROPOSAL_FILE")}"
     stored_id="$(jq -r '.id // empty' "$GHOST_PROPOSAL_FILE")"
     status="$(jq -r '.status // empty' "$GHOST_PROPOSAL_FILE")"
     digest="$(jq -r '.digest // empty' "$GHOST_PROPOSAL_FILE")"
-    post_sha256="$(jq -r '.execution.post_sha256 // empty' "$GHOST_PROPOSAL_FILE")"
-    module_sha256="$(jq -r '.machine_fingerprint.ghost_module.sha256 // empty' "$GHOST_PROPOSAL_FILE")"
     verification_result="$(jq -r '.verification.result // empty' "$GHOST_PROPOSAL_FILE")"
     derivation="$(jq -r '.verification.derivation // empty' "$GHOST_PROPOSAL_FILE")"
 
@@ -36,8 +34,7 @@ proposal_id="${1:-$(jq -r '.id // empty' "$GHOST_PROPOSAL_FILE")}"
         echo "GHOST // successful NixOS evaluation unavailable" >&2
         exit 7
     }
-    [ "$(ghost_file_fingerprint "$GHOST_NIX_CONFIG_PATH")" = "$post_sha256" ] && \
-        [ "$(ghost_file_fingerprint "$GHOST_NIX_GHOST_MODULE_PATH")" = "$module_sha256" ] || {
+    ghost_execution_files_match "$GHOST_PROPOSAL_FILE" || {
         echo "GHOST // validated files changed; activation challenge refused" >&2
         exit 8
     }

@@ -48,6 +48,18 @@ ghost_machine_fingerprint() {
           ghost_module: {path: $module_path, sha256: $module_sha256}}'
 }
 
+ghost_execution_files_match() {
+    local proposal_file="$1" target post other expected_other
+    target="$(jq -r '.execution.target_path // .machine_fingerprint.config.path' "$proposal_file")"
+    post="$(jq -r '.execution.post_sha256 // empty' "$proposal_file")"
+    case "$target" in
+        "$GHOST_NIX_CONFIG_PATH") other="$GHOST_NIX_GHOST_MODULE_PATH"; expected_other="$(jq -r '.machine_fingerprint.ghost_module.sha256' "$proposal_file")" ;;
+        "$GHOST_NIX_GHOST_MODULE_PATH") other="$GHOST_NIX_CONFIG_PATH"; expected_other="$(jq -r '.machine_fingerprint.config.sha256' "$proposal_file")" ;;
+        *) return 1 ;;
+    esac
+    [ "$(ghost_file_fingerprint "$target")" = "$post" ] && [ "$(ghost_file_fingerprint "$other")" = "$expected_other" ]
+}
+
 ghost_proposal_save() {
     local request="$1"
     local intent="$2"

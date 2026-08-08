@@ -42,8 +42,6 @@ ghost_state_init
     stored_id="$(jq -r '.id // empty' "$GHOST_PROPOSAL_FILE")"
     status="$(jq -r '.status // empty' "$GHOST_PROPOSAL_FILE")"
     digest="$(jq -r '.digest // empty' "$GHOST_PROPOSAL_FILE")"
-    post_sha256="$(jq -r '.execution.post_sha256 // empty' "$GHOST_PROPOSAL_FILE")"
-    module_sha256="$(jq -r '.machine_fingerprint.ghost_module.sha256 // empty' "$GHOST_PROPOSAL_FILE")"
     verification="$(jq -r '.verification.result // empty' "$GHOST_PROPOSAL_FILE")"
     derivation="$(jq -r '.verification.derivation // empty' "$GHOST_PROPOSAL_FILE")"
     auth_expiry="$(jq -r '.activation_authorization.expires_epoch // 0' "$GHOST_PROPOSAL_FILE")"
@@ -57,8 +55,7 @@ ghost_state_init
         echo "GHOST // consumed activation challenge binding mismatch" >&2; exit 8;
     }
     [ "$(date +%s)" -lt "$auth_expiry" ] || { echo "GHOST // activation authorization expired" >&2; exit 9; }
-    [ "$(ghost_file_fingerprint "$GHOST_NIX_CONFIG_PATH")" = "$post_sha256" ] &&
-        [ "$(ghost_file_fingerprint "$GHOST_NIX_GHOST_MODULE_PATH")" = "$module_sha256" ] || {
+    ghost_execution_files_match "$GHOST_PROPOSAL_FILE" || {
         echo "GHOST // validated files changed; activation refused" >&2; exit 10;
     }
     before_generation="${GHOST_TEST_GENERATION_BEFORE:-$(generation_number)}"
@@ -97,8 +94,7 @@ if [ "$command_status" -eq 0 ] && [ "$after_generation" != "$before_generation" 
 elif [ "$command_status" -eq 0 ]; then
     result=command-succeeded-generation-unchanged; new_status=activation-ambiguous
 fi
-if [ "$(ghost_file_fingerprint "$GHOST_NIX_CONFIG_PATH")" != "$post_sha256" ] ||
-    [ "$(ghost_file_fingerprint "$GHOST_NIX_GHOST_MODULE_PATH")" != "$module_sha256" ]; then
+if ! ghost_execution_files_match "$GHOST_PROPOSAL_FILE"; then
     result=validated-files-changed-during-activation; new_status=activation-ambiguous
 fi
 {

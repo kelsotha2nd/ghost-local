@@ -1,0 +1,11 @@
+{
+  "id": "service.disable",
+  "version": 1,
+  "title": "Disable Ollama declaratively",
+  "risk": "system-change",
+  "target_kind": "verified-nixos-boolean-option",
+  "executor": "nixos-service-toggle",
+  "validator": "nixos-full-evaluation",
+  "activation": "nixos-generation-switch",
+  "rollback": "trusted-file-backup-and-previous-generation"
+}

@@ -16,14 +16,13 @@ ghost_state_init
     before="$(jq -r '.activation.generation_before // empty' "$GHOST_PROPOSAL_FILE")"
     after="$(jq -r '.activation.generation_after // empty' "$GHOST_PROPOSAL_FILE")"
     backup="$(jq -r '.execution.backup // empty' "$GHOST_PROPOSAL_FILE")"
-    original_sha256="$(jq -r '.machine_fingerprint.config.sha256 // empty' "$GHOST_PROPOSAL_FILE")"
-    post_sha256="$(jq -r '.execution.post_sha256 // empty' "$GHOST_PROPOSAL_FILE")"
+    original_sha256="$(jq -r '.execution.original_sha256 // .machine_fingerprint.config.sha256 // empty' "$GHOST_PROPOSAL_FILE")"
     case "$status" in activated|fixture-activated) ;; *) echo "GHOST // latest proposal is not an activated change" >&2; exit 6 ;; esac
     [ -n "$before" ] && [ -n "$after" ] && [ "$before" != "$after" ] || { echo "GHOST // activation generations are invalid" >&2; exit 7; }
     [ -f "$backup" ] && [ ! -L "$backup" ] && [ "$(ghost_file_fingerprint "$backup")" = "$original_sha256" ] || {
         echo "GHOST // trusted rollback backup unavailable" >&2; exit 8;
     }
-    [ "$(ghost_file_fingerprint "$GHOST_NIX_CONFIG_PATH")" = "$post_sha256" ] || {
+    ghost_execution_files_match "$GHOST_PROPOSAL_FILE" || {
         echo "GHOST // configuration changed since activation; rollback refused" >&2; exit 9;
     }
     ttl="${GHOST_ROLLBACK_CHALLENGE_TTL_SECONDS:-120}"

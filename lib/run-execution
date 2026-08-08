@@ -12,6 +12,11 @@ case "$capability_id" in
     service.restart)
         exec "$ROOT/lib/restart-service" "$proposal_id"
         ;;
+    service.enable|service.disable)
+        "$ROOT/lib/toggle-service" "$proposal_id" || exit $?
+        echo
+        GHOST_PREPARE_ACTIVATION=1 exec "$ROOT/lib/verify" "$proposal_id"
+        ;;
     package.add|package.remove|"")
         "$ROOT/lib/execute" "$proposal_id" || exit $?
         echo

@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+[ "${1:-}" = services.ollama.enable ] || exit 1
+printf '%s\n' 'Value:' '  true' '' 'Default:' '  false' '' 'Type:' '  boolean'

@@ -237,9 +237,10 @@ fi
     fi
     jq --arg status "$execution_status" --arg executed_at "$executed_at" --arg package "$package" --arg action "$action" \
         --arg backup "$backup" --arg post_sha256 "$post_sha256" \
-        --arg original_mode "$original_mode" \
+        --arg original_mode "$original_mode" --arg target_path "$GHOST_NIX_CONFIG_PATH" --arg original_sha256 "$original_sha256" \
         '.status = $status |
          .execution = {executed_at: $executed_at, action: $action, package: $package,
+                       target_path: $target_path, original_sha256: $original_sha256,
                        backup: $backup, post_sha256: $post_sha256,
                        original_mode: $original_mode,
                        activation: "not-run"}' \

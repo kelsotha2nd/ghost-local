@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+
+set -o pipefail
+SOURCE="${BASH_SOURCE[0]}"; ROOT="$(cd -P "$(dirname "$SOURCE")/.." >/dev/null 2>&1 && pwd)"
+# shellcheck source=state
+source "$ROOT/lib/state"
+proposal_id="${1:-}"; [ -n "$proposal_id" ] || { echo "usage: ghost toggle-service <proposal-id>" >&2; exit 2; }
+test_mode="${GHOST_SERVICE_TOGGLE_TEST_MODE:-0}"
+if [ "$test_mode" = 1 ]; then case "$GHOST_NIX_GHOST_MODULE_PATH" in /tmp/*) ;; *) echo "GHOST // toggle fixture must live beneath /tmp" >&2; exit 21 ;; esac
+else
+    [ "$GHOST_NIX_CONFIG_PATH" = "$HOME/.config/nixos/configuration.nix" ] && [ "$GHOST_NIX_GHOST_MODULE_PATH" = "$HOME/.config/nixos/modules/ghost.nix" ] || { echo "GHOST // production toggle target mismatch" >&2; exit 20; }
+fi
+ghost_state_init
+[ -s "$GHOST_PROPOSAL_FILE" ] && [ -s "$GHOST_APPROVAL_CREDENTIAL_FILE" ] && [ -s "$GHOST_EXECUTION_CHALLENGE_FILE" ] || { echo "GHOST // authorized toggle proposal unavailable" >&2; exit 4; }
+{
+    flock -x 9
+    stored_id="$(jq -r '.id // empty' "$GHOST_PROPOSAL_FILE")"; status="$(jq -r '.status // empty' "$GHOST_PROPOSAL_FILE")"
+    request="$(jq -r '.request' "$GHOST_PROPOSAL_FILE")"; intent="$(jq -r '.intent' "$GHOST_PROPOSAL_FILE")"; plan="$(jq -r '.plan' "$GHOST_PROPOSAL_FILE")"; digest="$(jq -r '.digest' "$GHOST_PROPOSAL_FILE")"
+    capability="$(jq -cS '.capability' "$GHOST_PROPOSAL_FILE")"; capability_id="$(jq -r .id <<< "$capability")"
+    option="$(jq -r .option <<< "$capability")"; target_path="$(jq -r .target_path <<< "$capability")"; current="$(jq -r .current <<< "$capability")"; desired="$(jq -r .desired <<< "$capability")"
+    expiry="$(jq -r '.execution_authorization.expires_epoch // 0' "$GHOST_PROPOSAL_FILE")"
+    [ "$proposal_id" = "$stored_id" ] && [ "$status" = execution-authorized ] && [ "$intent" = change ] || { echo "GHOST // toggle execution state mismatch" >&2; exit 5; }
+    case "$capability_id:$desired" in service.enable:true|service.disable:false) ;; *) echo "GHOST // invalid service toggle descriptor" >&2; exit 6 ;; esac
+    [ "$option" = services.ollama.enable ] && [ "$target_path" = "$GHOST_NIX_GHOST_MODULE_PATH" ] || { echo "GHOST // toggle target mismatch" >&2; exit 7; }
+    [ "$(date +%s)" -lt "$expiry" ] || { echo "GHOST // toggle authorization expired" >&2; exit 8; }
+    [ "$(jq -r '.proposal_id' "$GHOST_EXECUTION_CHALLENGE_FILE")" = "$stored_id" ] && [ "$(jq -r '.digest' "$GHOST_EXECUTION_CHALLENGE_FILE")" = "$digest" ] && [ "$(jq -r '.consumed' "$GHOST_EXECUTION_CHALLENGE_FILE")" = true ] || { echo "GHOST // consumed challenge unavailable" >&2; exit 9; }
+    [ "$(ghost_proposal_digest "$request" "$intent" "$plan" "$capability")" = "$digest" ] && [ "$(ghost_machine_fingerprint)" = "$(jq -c '.machine_fingerprint' "$GHOST_PROPOSAL_FILE")" ] || { echo "GHOST // toggle proposal or machine changed" >&2; exit 10; }
+    token="$(jq -r '.token' "$GHOST_APPROVAL_CREDENTIAL_FILE")"
+    [ "$(jq -r '.proposal_id' "$GHOST_APPROVAL_CREDENTIAL_FILE")" = "$stored_id" ] && [ "$(jq -r '.digest' "$GHOST_APPROVAL_CREDENTIAL_FILE")" = "$digest" ] && [ "$(printf %s "$token" | sha256sum | awk '{print $1}')" = "$(jq -r '.approval.token_sha256' "$GHOST_PROPOSAL_FILE")" ] || { echo "GHOST // approval credential mismatch" >&2; exit 11; }
+    observed="$(awk '/^  services\.ollama = \{$/ {inside=1; next} inside && /^  \};$/ {inside=0} inside && /^    enable = (true|false);$/ {line=$0; sub(/^    enable = /,"",line); sub(/;$/,"",line); print line; count++} END {if(count!=1) exit 1}' "$target_path")" || { echo "GHOST // explicit Ollama boolean changed or became ambiguous" >&2; exit 12; }
+    [ "$observed" = "$current" ] || { echo "GHOST // Ollama option changed after proposal" >&2; exit 13; }
+    backup_dir="$GHOST_STATE_DIR/backups"; mkdir -p "$backup_dir"; chmod 700 "$backup_dir"; backup="$backup_dir/${proposal_id}-ghost.nix"
+    cp -p "$target_path" "$backup"; chmod 600 "$backup"; original_mode="$(stat -c %a "$target_path")"; original_sha256="$(ghost_file_fingerprint "$target_path")"
+    edited="$(mktemp "$(dirname "$target_path")/.ghost-toggle.XXXXXX")"
+    awk -v desired="$desired" '/^  services\.ollama = \{$/ {inside=1; print; next} inside && /^  \};$/ {inside=0; print; next} inside && /^    enable = (true|false);$/ && !changed {print "    enable = " desired ";"; changed=1; next} {print} END {if(!changed) exit 42}' "$target_path" > "$edited" || { cp -p "$backup" "$target_path"; chmod "$original_mode" "$target_path"; echo "GHOST // exact service option edit failed; backup restored" >&2; exit 14; }
+    chmod --reference="$target_path" "$edited"; mv "$edited" "$target_path"
+    nix-instantiate --parse "$target_path" >/dev/null 2>&1 || { cp -p "$backup" "$target_path"; chmod "$original_mode" "$target_path"; echo "GHOST // toggle parse failed; backup restored" >&2; exit 15; }
+    executed_at="$(date --iso-8601=seconds)"; post_sha256="$(ghost_file_fingerprint "$target_path")"; action=disabled; [ "$desired" = true ] && action=enabled
+    execution_status=executed-awaiting-activation; [ "$test_mode" = 1 ] && execution_status=fixture-executed
+    temporary="$(mktemp "$GHOST_STATE_DIR/.proposal.XXXXXX")"
+    jq --arg status "$execution_status" --arg executed_at "$executed_at" --arg action "$action" --arg option "$option" --arg target_path "$target_path" --arg backup "$backup" --arg post "$post_sha256" --arg original "$original_sha256" --arg mode "$original_mode" \
+        '.status=$status | .execution={executed_at:$executed_at, action:$action, option:$option, target_path:$target_path, backup:$backup, post_sha256:$post, original_sha256:$original, original_mode:$mode, activation:"not-run"}' "$GHOST_PROPOSAL_FILE" > "$temporary"
+    chmod 600 "$temporary"; mv "$temporary" "$GHOST_PROPOSAL_FILE"
+} 9> "$GHOST_STATE_LOCK"
+echo "GHOST // SERVICE OPTION EDITED AND VALIDATED"
+echo "  option: $option"; echo "  value:  $current -> $desired"; echo "  activation: not run"; echo; diff -u "$backup" "$target_path" || true

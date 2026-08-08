@@ -76,5 +76,8 @@ if [[ "$request_lower" =~ restart[[:space:]]+(the[[:space:]]+)?(service[[:space:
     unit="${BASH_REMATCH[3]}"; [[ "$unit" == *.service ]] || unit="${unit}.service"
     [[ "$proposal" == *"$unit"* ]] || { echo "proposal does not identify the verified service unit: $unit" >&2; exit 1; }
 fi
+if [[ "$request_lower" =~ (enable|disable)[[:space:]]+(the[[:space:]]+)?(service[[:space:]]+)?ollama ]]; then
+    [[ "$proposal" == *"services.ollama.enable"* ]] || { echo "proposal does not identify services.ollama.enable" >&2; exit 1; }
+fi
 
 exit 0

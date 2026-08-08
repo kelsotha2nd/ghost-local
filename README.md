@@ -285,3 +285,14 @@ The executor rechecks that the unit is loaded, captures its initial state, runs
 only `sudo systemctl restart <verified-unit>`, and reports success only when a
 fresh post-command check returns `active`. Unlike declarative package changes,
 the restart is immediate and does not enter the NixOS activation pipeline.
+
+`service.enable` and `service.disable` provide the first persistent service
+control, currently restricted to the verified boolean option
+`services.ollama.enable`. Resolution uses `nixos-option` to prove the option is
+boolean and requires exactly one literal assignment inside the known GHOST
+module; missing, duplicate, computed, or already-satisfied values are refused.
+After `stage this proposal`, the dedicated phrase `authorize service change`
+flips only that signed boolean and enters the normal full-evaluation and system
+activation pipeline. Backup, activation, and guarded rollback are target-aware,
+so a module edit restores the module while independently proving
+`configuration.nix` remained unchanged.

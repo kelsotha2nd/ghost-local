@@ -71,4 +71,10 @@ printf '%s\n' \
     "Risk: temporary interruption. Validation: require active. Rollback: report diagnostics. Pending review." > "$service_plan"
 "$ROOT/lib/validate-proposal" "$service_plan" "restart the ollama service"
 
+toggle_plan="$temporary_state/toggle-plan"
+printf '%s\n' \
+    "Scope: set services.ollama.enable to false. Steps: edit the verified module." \
+    "Risk: Ollama stops after activation. Validation: full NixOS evaluation. Rollback: restore backup. Pending review." > "$toggle_plan"
+"$ROOT/lib/validate-proposal" "$toggle_plan" "disable ollama at boot"
+
 echo "proposal tests passed"

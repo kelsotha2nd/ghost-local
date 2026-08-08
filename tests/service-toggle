@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." >/dev/null 2>&1 && pwd)"
+temporary_root="$(mktemp -d /tmp/ghost-toggle-test.XXXXXX)"; trap 'rm -r "$temporary_root"' EXIT
+export GHOST_STATE_DIR="$temporary_root/state"
+export GHOST_NIX_CONFIG_PATH="$temporary_root/configuration.nix"
+export GHOST_NIX_GHOST_MODULE_PATH="$temporary_root/ghost.nix"
+export GHOST_CAPABILITY_TEST_MODE=1
+export GHOST_NIXOS_OPTION="$ROOT/tests/fixtures/fake-nixos-option"
+printf '%s\n' '{ ... }: { imports = [ ./ghost.nix ]; }' > "$GHOST_NIX_CONFIG_PATH"
+printf '%s\n' '{ ... }:' '{' '  services.ollama = {' '    enable = true;' '  };' '}' > "$GHOST_NIX_GHOST_MODULE_PATH"
+# shellcheck source=../lib/state
+source "$ROOT/lib/state"; ghost_state_init
+descriptor="$("$ROOT/lib/capability" resolve 'disable ollama at boot')"
+[ "$(jq -r .id <<< "$descriptor")" = service.disable ]
+[ "$(jq -r .option <<< "$descriptor")" = services.ollama.enable ]
+[ "$(jq -r .current <<< "$descriptor")" = true ]
+[ "$(jq -r .desired <<< "$descriptor")" = false ]
+proposal_id="$(ghost_proposal_save 'disable ollama at boot' change 'Scope: services.ollama.enable. Steps. Risk. Validation. Rollback. Pending review.' "$descriptor")"
+"$ROOT/lib/stage" "$proposal_id" >/dev/null
+set +e
+"$ROOT/lib/voice-command" 'yes disable it' >/dev/null 2>&1
+casual_status=$?
+set -e
+[ "$casual_status" -eq 64 ]
+output="$(GHOST_SERVICE_TOGGLE_TEST_MODE=1 GHOST_VERIFY_TEST_MODE=1 GHOST_SKIP_FULL_EVALUATION=1 "$ROOT/lib/voice-command" 'authorize service change.')"
+[[ "$output" == *'NIXOS EVALUATION PASSED'* ]]
+grep -q '^    enable = false;$' "$GHOST_NIX_GHOST_MODULE_PATH"
+[ "$(jq -r .status "$GHOST_PROPOSAL_FILE")" = fixture-validated ]
+[ "$(jq -r .execution.target_path "$GHOST_PROPOSAL_FILE")" = "$GHOST_NIX_GHOST_MODULE_PATH" ]
+backup="$(jq -r .execution.backup "$GHOST_PROPOSAL_FILE")"; grep -q '^    enable = true;$' "$backup"
+[ "$(jq -r .consumed "$GHOST_ACTIVATION_CHALLENGE_FILE")" = false ]
+GHOST_ACTIVATOR_TEST_MODE=1 GHOST_TEST_GENERATION_BEFORE=200 GHOST_AUTHORIZE_ACTIVATE=1 \
+    "$ROOT/lib/authorize-activation" >/dev/null
+[ "$(jq -r .status "$GHOST_PROPOSAL_FILE")" = fixture-activated ]
+"$ROOT/lib/rollback-challenge" >/dev/null
+GHOST_AUTHORIZE_ROLLBACK=1 GHOST_ROLLBACK_TEST_MODE=1 GHOST_TEST_CURRENT_GENERATION=201 \
+    "$ROOT/lib/authorize-rollback" >/dev/null
+[ "$(jq -r .status "$GHOST_PROPOSAL_FILE")" = fixture-rolled-back ]
+grep -q '^    enable = true;$' "$GHOST_NIX_GHOST_MODULE_PATH"
+[ "$(sha256sum "$GHOST_NIX_CONFIG_PATH" | awk '{print $1}')" = "$(jq -r '.machine_fingerprint.config.sha256' "$GHOST_PROPOSAL_FILE")" ]
+set +e
+"$ROOT/lib/capability" resolve 'enable ollama' >/dev/null 2>&1
+already_status=$?
+set -e
+[ "$already_status" -eq 6 ]
+echo "service toggle tests passed"

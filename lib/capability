@@ -19,7 +19,28 @@ case "${1:-}" in
     resolve)
         shift
         request="$*"; lower="${request,,}"
-        if [[ "$lower" =~ restart[[:space:]]+(the[[:space:]]+)?(service[[:space:]]+)?([a-zA-Z0-9@_.-]+) ]]; then
+        if [[ "$lower" =~ (enable|disable)[[:space:]]+(the[[:space:]]+)?(service[[:space:]]+)?ollama([[:space:]]+(at|on)[[:space:]]+boot)? ]]; then
+            operation="${BASH_REMATCH[1]}"; desired=true; [ "$operation" = disable ] && desired=false
+            option=services.ollama.enable
+            option_command=nixos-option
+            [ "${GHOST_CAPABILITY_TEST_MODE:-0}" = 1 ] && option_command="${GHOST_NIXOS_OPTION:-nixos-option}"
+            command -v "$option_command" >/dev/null 2>&1 || { echo "GHOST // nixos-option unavailable" >&2; exit 4; }
+            option_output="$("$option_command" "$option" 2>/dev/null || true)"
+            grep -q '^Type:$' <<< "$option_output" && grep -q '^  boolean$' <<< "$option_output" || { echo "GHOST // verified boolean NixOS option unavailable: $option" >&2; exit 4; }
+            target_path="${GHOST_NIX_GHOST_MODULE_PATH:-$HOME/.config/nixos/modules/ghost.nix}"
+            [ -f "$target_path" ] && [ ! -L "$target_path" ] || { echo "GHOST // known GHOST module unavailable" >&2; exit 4; }
+            current="$(awk '
+                /^  services\.ollama = \{$/ {inside=1; next}
+                inside && /^  \};$/ {inside=0}
+                inside && /^    enable = (true|false);$/ {line=$0; sub(/^    enable = /, "", line); sub(/;$/, "", line); print line; count++}
+                END {if (count != 1) exit 1}
+            ' "$target_path")" || { echo "GHOST // one explicit Ollama enable boolean was not found" >&2; exit 4; }
+            [ "$current" != "$desired" ] || { echo "GHOST // services.ollama.enable is already $desired" >&2; exit 6; }
+            jq -cS --arg target ollama.service --arg option "$option" --arg target_path "$target_path" \
+                --arg current "$current" --arg desired "$desired" \
+                '. + {target: $target, option: $option, target_path: $target_path, current: ($current == "true"), desired: ($desired == "true")}' \
+                "$ROOT/capabilities/service.${operation}.json"
+        elif [[ "$lower" =~ restart[[:space:]]+(the[[:space:]]+)?(service[[:space:]]+)?([a-zA-Z0-9@_.-]+) ]]; then
             unit="${BASH_REMATCH[3]}"
             [[ "$unit" == *.service ]] || unit="${unit}.service"
             [[ "$unit" =~ ^[a-zA-Z0-9@_.-]+\.service$ ]] || { echo "GHOST // invalid systemd service name" >&2; exit 4; }
