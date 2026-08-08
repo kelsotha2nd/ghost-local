@@ -14,7 +14,7 @@ failure_limit="${GHOST_SESSION_FAILURE_LIMIT:-3}"
 running=1
 trap 'running=0' INT TERM
 echo "GHOST // SESSION ONLINE"
-echo "  push ENTER to close each capture"
+if [ "${1:-}" = --auto ]; then echo "  automatic speech endpoint active"; else echo "  push ENTER to close each capture"; fi
 echo "  say: Ghost, go quiet"
 if [ "${GHOST_SESSION_ANNOUNCE:-1}" = 1 ]; then
     "$ROOT/lib/speak" "Voice session online." || true
@@ -26,6 +26,7 @@ while [ "$running" -eq 1 ]; do
     voice_status=$?
     case "$voice_status" in
         0) failures=0 ;;
+        66) failures=0 ;;
         65) echo "GHOST // SESSION OFFLINE"; exit 0 ;;
         130|143) break ;;
         *)

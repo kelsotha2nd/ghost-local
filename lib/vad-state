@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+
+log_file="${1:-}"
+[ -n "$log_file" ] && [ -r "$log_file" ] || { echo waiting; exit 0; }
+last_end="$(awk '/silence_end:/ {line=NR} END {print line+0}' "$log_file")"
+last_start="$(awk '/silence_start:/ {line=NR; value=$NF} END {print line+0, value+0}' "$log_file")"
+read -r start_line start_value <<< "$last_start"
+if [ "$last_end" -gt 0 ]; then
+    if [ "$start_line" -gt "$last_end" ]; then echo complete; else echo speaking; fi
+elif [ "$start_line" -gt 0 ] && awk -v value="$start_value" 'BEGIN {exit !(value > 0.25)}'; then
+    echo complete
+else
+    echo waiting
+fi

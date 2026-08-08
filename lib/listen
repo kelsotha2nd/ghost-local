@@ -5,6 +5,8 @@ ROOT="$(cd -P "$(dirname "$SOURCE")/.." >/dev/null 2>&1 && pwd)"
 # shellcheck source=voice-config
 source "$ROOT/lib/voice-config"
 
+auto_mode=0
+if [ "${1:-}" = --auto ]; then auto_mode=1; shift; fi
 duration="${1:-}"
 if [ -n "$duration" ] && [[ ! "$duration" =~ ^[1-9][0-9]*$ ]]; then
     echo "GHOST // recording duration must be a positive integer" >&2
@@ -18,13 +20,17 @@ fi
 
 audio_file="$(mktemp --suffix=.wav)"
 record_log="$(mktemp)"
-record_pid=""
+record_pid=""; ffmpeg_pid=""; audio_fifo=""; audio_dir=""; vad_log=""
 cleanup() {
     if [ -n "$record_pid" ] && kill -0 "$record_pid" 2>/dev/null; then
         kill -INT "$record_pid" 2>/dev/null || true
         wait "$record_pid" 2>/dev/null || true
     fi
-    rm -f "$audio_file" "$record_log"
+    if [ -n "$ffmpeg_pid" ] && kill -0 "$ffmpeg_pid" 2>/dev/null; then
+        kill -INT "$ffmpeg_pid" 2>/dev/null || true; wait "$ffmpeg_pid" 2>/dev/null || true
+    fi
+    rm -f "$audio_file" "$record_log" "$audio_fifo" "$vad_log"
+    case "$audio_dir" in /tmp/ghost-audio.*) rmdir "$audio_dir" 2>/dev/null || true ;; esac
 }
 trap cleanup EXIT
 trap 'exit 130' INT TERM
@@ -36,7 +42,48 @@ fi
 
 capture_started="$(date +%s%3N)"
 
-if [ -n "$duration" ]; then
+if [ "$auto_mode" -eq 1 ]; then
+    command -v ffmpeg >/dev/null 2>&1 || { echo "GHOST // missing voice dependency: ffmpeg" >&2; exit 3; }
+    [ -z "$duration" ] || { echo "GHOST // --auto does not accept a duration" >&2; exit 2; }
+    initial_timeout="${GHOST_AUTO_INITIAL_TIMEOUT_SECONDS:-12}"
+    maximum_seconds="${GHOST_AUTO_MAX_SECONDS:-30}"
+    silence_seconds="${GHOST_AUTO_SILENCE_SECONDS:-1.3}"
+    silence_db="${GHOST_AUTO_SILENCE_DB:--38}"
+    [[ "$initial_timeout" =~ ^[1-9][0-9]*$ ]] && [[ "$maximum_seconds" =~ ^[1-9][0-9]*$ ]] &&
+        [[ "$silence_seconds" =~ ^[0-9]+([.][0-9]+)?$ ]] && [[ "$silence_db" =~ ^-?[0-9]+([.][0-9]+)?$ ]] || {
+            echo "GHOST // invalid automatic capture settings" >&2; exit 2;
+        }
+    [ "$maximum_seconds" -gt "$initial_timeout" ] || { echo "GHOST // auto maximum must exceed initial timeout" >&2; exit 2; }
+    audio_dir="$(mktemp -d /tmp/ghost-audio.XXXXXX)"; chmod 700 "$audio_dir"
+    audio_fifo="$audio_dir/capture.raw"; mkfifo -m 600 "$audio_fifo"
+    vad_log="$(mktemp)"
+    echo "GHOST // LISTENING — automatic speech endpoint" >&2
+    ffmpeg -hide_banner -nostats -f s16le -ar 16000 -ac 1 -i "$audio_fifo" \
+        -af "silencedetect=noise=${silence_db}dB:d=${silence_seconds}" -c:a pcm_s16le -y "$audio_file" \
+        >/dev/null 2>"$vad_log" &
+    ffmpeg_pid=$!
+    pw-record "${record_args[@]}" --raw - >"$audio_fifo" 2>"$record_log" &
+    record_pid=$!
+    auto_started="$(date +%s)"; auto_outcome=""
+    while kill -0 "$record_pid" 2>/dev/null && kill -0 "$ffmpeg_pid" 2>/dev/null; do
+        vad_state="$("$ROOT/lib/vad-state" "$vad_log")"
+        elapsed=$(( $(date +%s) - auto_started ))
+        if [ "$vad_state" = complete ]; then auto_outcome=complete; break; fi
+        if [ "$vad_state" = waiting ] && [ "$elapsed" -ge "$initial_timeout" ]; then auto_outcome=idle; break; fi
+        if [ "$elapsed" -ge "$maximum_seconds" ]; then auto_outcome=maximum; break; fi
+        sleep 0.1
+    done
+    kill -INT "$record_pid" 2>/dev/null || true; wait "$record_pid"; record_status=$?; record_pid=""
+    wait "$ffmpeg_pid" 2>/dev/null || true; ffmpeg_pid=""
+    if [ "$auto_outcome" = idle ]; then
+        echo "GHOST // AUTO: no speech before timeout" >&2
+        exit 66
+    elif [ "$auto_outcome" = maximum ]; then
+        echo "GHOST // AUTO: maximum capture reached" >&2
+    else
+        echo "GHOST // AUTO: end of speech detected" >&2
+    fi
+elif [ -n "$duration" ]; then
     echo "GHOST // LISTENING (${duration}s)" >&2
     pw-record "${record_args[@]}" \
         --sample-count "$((duration * 16000))" "$audio_file" \

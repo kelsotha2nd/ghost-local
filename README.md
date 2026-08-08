@@ -421,3 +421,11 @@ session instead of creating a capture or model retry storm. An optional numeric
 argument uses the existing timed-capture behavior. This resident loop is the
 future integration point for wake-word and silence detection rather than a
 second voice architecture.
+
+`ghost session --auto` replaces Enter with a streaming speech endpoint while
+leaving push-to-talk as the default fallback. PipeWire writes raw mono audio
+through a private FIFO to FFmpeg. The detector waits up to 12 seconds for speech,
+ends a turn after 1.3 seconds of trailing silence, and enforces a 30-second hard
+ceiling. A no-speech timeout returns to standby without invoking Whisper or
+counting as a session fault. Thresholds are configurable in `voice.env`; invalid
+or internally inconsistent limits are refused before capture begins.

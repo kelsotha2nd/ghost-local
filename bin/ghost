@@ -141,10 +141,10 @@ GHOST // COMMANDS
   ghost clear           clear conversation history
   ghost remember <fact> store a deliberate long-term memory
   ghost memories        show deliberate memories
-  ghost listen [seconds] push-to-talk or timed transcription
+  ghost listen [seconds|--auto] push-to-talk, timed, or speech-ended transcription
   ghost speak <text>    speak text through the local voice
-  ghost voice [seconds] push-to-talk, answer, and speak
-  ghost session [seconds] keep the voice pipeline resident between turns
+  ghost voice [seconds|--auto] capture, answer, and speak
+  ghost session [seconds|--auto] keep the voice pipeline resident between turns
   ghost route <request> inspect automatic voice routing
   ghost inspect <target> run a whitelisted read-only inspection
   ghost propose <change> create and save a change proposal
